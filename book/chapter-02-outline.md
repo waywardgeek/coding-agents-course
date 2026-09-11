@@ -5,8 +5,10 @@ Status: outline agreed in discussion 2026-09-11. Prose not yet written.
 Revised 2026-09-11 to apply the lessons of `book/review.md`: the exercise
 section is now specified to the level a grader can actually be built from.
 Open questions 6–9 ruled (agreed as proposed). Real-time hints added as
-§2.6a and as a graded requirement, on Bill's directive — raising two new
-scope questions, 10–11.
+§2.6a and as a graded requirement, on Bill's directive. Questions 10–11 also
+ruled: the exercise gains **exactly one** trivial tool (`agent_status`,
+because a turn with no tool call has no middle to steer into) and **requires
+concurrent stdin** (because a hint must be received while blocked).
 
 **Unverified claims in this draft, for the next review pass:** the July 2025
 priority claim for mid-turn hints, and the model-support split (mid-turn
@@ -291,6 +293,30 @@ question. The agent pivots mid-chain, without the tool chain breaking.
 This is the capability Chapter 1 §1.1 named first when it argued that
 frameworks hard-code delivery. Here the student builds it.
 
+**Why this chapter needs one tool.** A hint is a message that arrives *during*
+a turn — so a turn has to be long enough to have a middle. With no tools a
+turn is a single round trip: request, response, done. There is no middle, and
+mid-turn steering degenerates into "your next question." That is why the
+exercise hardcodes exactly one trivial tool (`agent_status`, below). It is
+not a tool chapter; it is the smallest possible thing that makes a turn last
+long enough for a human to interrupt it.
+
+**The demonstration.** The model calls `agent_status`. You return the status.
+It calls it again. And again — a loop that will happily run until something
+stops it. Mid-loop, you type:
+
+> **please stop**
+
+The words reach the model *inside* the turn, attached to the very next tool
+result. The loop ends. You did not kill the process, you did not wait for
+your turn — you steered a running agent, and you built every part of the path
+those words travelled.
+
+In the REPL, try **"Please speak like a pirate"** mid-turn instead, and watch
+the rest of the turn come back in pirate. Same mechanism, more fun, and it
+makes the timing vivid: everything before the hint is normal, everything
+after is piratical, in a single unbroken turn.
+
 **Provenance.** As far as we can determine, this book's author and his agent
 invented this in **July 2025** — the first known implementation of mid-turn
 human steering in an agentic loop. It came from noticing that the Messages API
@@ -326,6 +352,12 @@ not an aesthetic preference; it is load-bearing, because there are currently
 | **Mid-turn `system` message** — the API's first-class path | `claude-opus-4-8` and newer (incl. `claude-opus-5`); **not** `claude-sonnet-5` | clean, no lag |
 | **The original hack** — hint as a `text` block appended **after** the `tool_result` blocks in the same user message | everywhere, including Sonnet 5 | works; janky |
 
+*(Both pass the grader, and the difference is visible in this chapter's own
+`agent_status` loop. The first-class path carries a steer into the turn
+directly; the hack has to wait for somewhere to attach itself — the next tool
+result — which is the one-round lag. The author's agent ran on the hack from
+2025, and the upgrade was immediately noticeable.)*
+
 Both are legal. Both pass the grader. The hack is what the author used from
 2025 and it has not stopped working. But note what supporting both requires:
 a renderer that asks *"which model am I talking to?"* and a context that
@@ -334,8 +366,10 @@ natural — and you can serve exactly one model family.
 
 **The ordering is load-bearing.** In the hack, the hint text goes *after* the
 tool results, never before. A hint placed ahead of the results it is meant to
-redirect reads as a comment on nothing; the model has not yet seen what it is
-being steered away from.
+redirect reads as a comment on nothing: the model has not yet seen what it is
+being steered away from. This is a real rule with a real failure mode, it is
+graded, and it is the reason `agent_status` had to exist — an ordering rule
+needs two things to order.
 
 **A hint is history, not ephemera.** This is the distinction students most
 often get backwards, and §2.4 is what makes it decidable. Ephemera are
@@ -400,15 +434,32 @@ that supports it, *then* go make the hack work.
 
 ## Exercise (auto-graded, Go, fake Anthropic server)
 
-Rebuild the Chapter 1 chatbot on the real structures. **Observably
-identical from the outside** — same REPL, same stdio grader contract —
-which is itself the lesson: the rewrite bought properties, not features.
+Rebuild the Chapter 1 chatbot on the real structures. For everything
+Chapter 1 could already do it is **observably identical from the outside** —
+same REPL, same stdio contract, same answers — which is the lesson: the
+rewrite bought properties, not features.
 
-Everything Chapter 1 established still holds and is not restated in the
-chapter prose: grader mode is the default (no arguments), stdout carries the
-protocol only, the three `ANTHROPIC_*` variables are read and never
-hardcoded, grading is free and offline, and the grader records violations
-and judges afterwards rather than rejecting on the first mistake.
+Then it does two things the Chapter 1 program could not have expressed at
+any price: it accepts a **hint** mid-turn, and it survives an **interrupt**.
+Both were impossible before, and neither needed a new idea — they fell out of
+the structures. That is the argument of this chapter in one sentence.
+
+**Exactly one tool, and it is not a tool system.** Chapter 3 builds the tool
+loop properly. This exercise hardcodes a single zero-argument tool,
+`agent_status`, which returns a small JSON object describing the
+conversation's own state — the highest `Seq` in the log and the current turn
+state. It is deliberately self-referential: the agent's one capability is to
+look at the structure you just built.
+
+It exists because **without a tool, a turn is one round trip, and there is no
+"mid-turn" to steer into.** The fake drives `agent_status` in a loop — calling
+it again, and again — which is what gives you a long turn with a human-shaped
+window in the middle of it. Its return value must be a deterministic function
+of the log, because `replay` demands byte-identical renders.
+
+What you are *not* building: a tool registry, a dispatch table, schemas,
+argument validation, or error plumbing. One `if` statement on the tool name is
+the correct amount of machinery here.
 
 ### The problem this section exists to solve
 
@@ -456,10 +507,22 @@ acknowledgement line.
 | `{"dump": "<path>"}` | none — serialize the event log to `<path>`, flush, then ack |
 
 The `hint` directive is the one that tests whether you built a conversation
-or a request builder. The grader sends it while your program is waiting on a
-tool result, which means it arrives on stdin *while you are blocked on an
-HTTP call you have already sent.* If your program can only read stdin between
-rounds, you cannot pass this check — and discovering that is the point.
+or a request builder. The grader sends it **mid-loop** — while the fake is
+driving `agent_status` and your program is blocked on an HTTP call it has
+already sent. The line arrives on stdin at a moment when a round-synchronous
+program is not listening. If you can only read stdin between rounds you
+cannot even receive this directive, let alone act on it. §2.5 already told
+you the answer: an actor has a mailbox.
+
+The grader's hint is **"please stop"**, and the fake enforces the whole
+contract behaviorally: it keeps calling `agent_status` until it sees that
+text correctly delivered, and then stops. A submission that drops the hint,
+delivers it in the wrong position, or saves it for the next round keeps the
+loop running — and the loop running is itself the failure, visible without
+reading a single check name.
+
+*(In the REPL, students should try **"Please speak like a pirate"** instead.
+Same path, and the turn audibly changes character halfway through.)*
 
 Directives are acknowledged rather than silent for the same reason Chapter 1
 demands one answer per round: it keeps the stream synchronous, so a hung
@@ -482,8 +545,8 @@ your choice, as long as `render` needs nothing but the path it is given.
 | `replay` | 15 | two separate `render` invocations on the same log emit **byte-identical** requests |
 | `redaction` | 15 | after `Redacted`, the payload is absent from the rendered request and present in the dumped log |
 | `ephemera` | 10 | injected data appears in exactly one request, exactly once, and never in the log's dialogue events |
-| `hint` | 15 | a message arriving mid-turn is classified as a hint, delivered **once**, in the correct position, and retained in history thereafter |
-| `interrupt` | 10 | post-interrupt `ToolCalled` events are recorded and **not executed**; the next rendered request is legal Anthropic JSON |
+| `hint` | 15 | a message arriving mid-turn is received while blocked, classified as a hint, delivered **once**, **after** the tool results, and retained in history thereafter |
+| `interrupt` | 10 | post-interrupt `ToolCalled` events are recorded and **not executed**; the next rendered request is legal Anthropic JSON, and the next message is a prompt, not a hint |
 | `usage` | 5 | cumulative totals derived from `ResponseEnded` events |
 
 Notes on the ones that carry the chapter's thesis:
@@ -497,15 +560,24 @@ Notes on the ones that carry the chapter's thesis:
   one line of grader code: gone from one artifact, still there in the other.
   A design that conflates them cannot pass both halves simultaneously.
 - **`interrupt`** is where the reducer's totality gets tested. The grader
-  interrupts mid-turn and then feeds tool calls; recording them while
-  executing nothing is only possible if `Interrupted` is a real state.
-- **`hint`** is graded on four separable properties, and students typically
-  get three: *classified* (it is a hint, not a prompt, because of when it
-  arrived), *delivered once* (not re-sent every round — that is the ephemera
-  mistake applied to the wrong thing), *positioned* (after the tool results,
-  never before), and *retained* (still in the dialogue ten rounds later,
-  because unlike ephemera it really was said). Either delivery mechanism
-  passes; the grader asserts the property, not the vendor path.
+  interrupts mid-loop and the model's already-issued `agent_status` call
+  still arrives; it must be **recorded and not executed**. That is only
+  expressible if `Interrupted` is a genuine state rather than a boolean
+  someone remembers to check — and a second interrupt on an
+  already-interrupted turn must be a legal no-op, the identity transition
+  §2.3's table promises. The renderer then has to make a context containing
+  an unanswered tool call into legal Anthropic JSON, which is §2.6's rule
+  earning its keep.
+- **`hint`** is graded on five separable properties, and students typically
+  get four: *received while blocked* (acked mid-loop — proof the program has
+  a mailbox and not a read loop), *classified* (it is a hint, not a prompt,
+  because of **when** it arrived, so it does not start a turn of its own or
+  earn its own `{"assistant"}` reply), *positioned* (after the tool results,
+  never before), *delivered once* (carried in exactly one request, not
+  re-sent every round — the ephemera mistake applied to the wrong thing), and
+  *retained* (still in the dialogue ten rounds later, because unlike ephemera
+  it really was said). Either delivery mechanism passes; the grader asserts
+  the property, not the vendor path.
 - **`ch1parity`** is deliberately worth less than the sum of its parts. The
   rewrite is not supposed to buy features — it is supposed to keep them while
   buying properties. *(Reweighted 30 → 25, with `logdump` 10 → 5 and `usage`
@@ -564,39 +636,53 @@ rig in front of us rather than guessed at here. Chapter 1's script was chosen
 that way and the memory probe's design (plant in round 1, check in round 4)
 came out of building it, not out of the outline.
 
-**Hint questions — NEW, opened 2026-09-11 (Bill's directive), awaiting ruling.**
+**Hint questions — opened and RULED 2026-09-11.**
 
-Adding real-time hints to the exercise pulls in two things the outline did
-not previously require. Both are arguably improvements; both are scope, and
-scope is yours.
+Adding real-time hints pulled in two things the outline did not previously
+require. Both were scope questions; both are now ruled.
 
-10. **Does Chapter 2 introduce a minimal tool?** The hint check needs a
-    moment when the agent is *mid-turn with something outstanding* — which in
-    practice means a tool call in flight, and the hack's delivery position is
-    defined relative to `tool_result` blocks. The `interrupt` check already
-    assumes `ToolCalled` events exist, so the event model is committed
-    regardless; the question is whether the student's program must actually
-    round-trip one trivial tool (the fake requests `echo`, the student
-    returns a `tool_result`). **My leaning: yes, exactly one, and no tool
-    *framework*.** Chapter 1 declared tools out of scope and that was right;
-    a single hardcoded echo is not a tool system, it is a place to stand.
-    Without it, hint delivery can only be demonstrated in the degenerate
-    no-tool case, which is precisely the case with the one-round lag.
+10. **Does Chapter 2 introduce a minimal tool? — RULED: YES. Exactly one:
+    `agent_status`.** Ruled twice, and the reversal is the instructive part.
 
-11. **Does the exercise require concurrent stdin?** To receive a hint while
-    an HTTP request is outstanding, the program must read stdin *while
-    blocked on the network*. A round-synchronous read loop — the natural
-    Chapter 1 shape — structurally cannot pass. **My leaning: yes, require
-    it, and say so plainly in the exercise.** This is not incidental
-    difficulty: §2.5 defines an actor as identity + **mailbox** + state +
-    behavior, and the mailbox has been an abstraction with nothing forcing it
-    to exist. The hint is what forces it. A student who builds a goroutine
-    feeding a channel has discovered why the actor model is in this chapter,
+    The first ruling was *no — tools are Chapter 3*, on the sound instinct
+    that Chapter 2 is already a demolition and a rebuild and should not also
+    become the tool chapter. I wrote it up, re-grounded the `hint` and
+    `interrupt` checks on tool-free forms, and in doing so produced the
+    argument against it: **without a tool, a turn is one round trip, so a
+    turn has no middle, and "mid-turn steering" has nothing to steer.** The
+    hint degenerates into "your next message," which is precisely the thing
+    hints are not. The feature cannot be taught in a chapter that cannot
+    produce a long turn.
+
+    So: one zero-argument tool, `agent_status`, returning a deterministic
+    function of the log. No registry, no schemas, no dispatch — Chapter 3
+    builds the tool loop properly. This one exists to make a turn long enough
+    to interrupt. The fake drives it in a loop until the hint **"please
+    stop"** arrives correctly delivered, which makes the pass condition
+    behavioral: get it wrong and the loop simply keeps going.
+
+    Worth recording for the book's own sake: the scope instinct ("that
+    belongs in a later chapter") was right in general and wrong here, and the
+    way it got caught was writing the consequence down until it contradicted
+    itself. That is the same move the Chapter 1 review made — build the
+    artifact, let it tell you the spec is wrong.
+
+11. **Does the exercise require concurrent stdin? — RULED: YES.** The program
+    must read stdin while blocked on the network, so a round-synchronous
+    Chapter 1-shaped loop cannot pass. This is now graded directly: the fake
+    holds its reply open, and the *received while blocked* property of the
+    `hint` check is satisfied only by a submission that acks the directive
+    during that window.
+
+    This is not incidental difficulty. §2.5 defines an actor as identity +
+    **mailbox** + state + behavior, and until now nothing forced the mailbox
+    to exist. The hint forces it. A student who ends up with a goroutine
+    feeding a channel has discovered why the actor model is in this chapter
     by being unable to proceed without it.
 
-    The risk is real and should be stated: this is the first concurrency in
-    the course, and concurrency bugs are a miserable place to lose a student.
-    Mitigation is the grader's existing record-then-judge discipline — the
-    `hint` check reports *which* of the four properties failed
-    (classified / delivered once / positioned / retained), so a student
-    debugging a race gets a named property rather than "hint check failed".
+    The risk stands and should be stated in the prose: this is the first
+    concurrency in the course, and a race is a miserable place to lose a
+    student. The mitigation is that the `hint` check reports *which* of its
+    four properties failed, so a student gets a named property rather than
+    "hint check failed".
+
