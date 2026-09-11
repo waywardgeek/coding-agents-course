@@ -93,7 +93,11 @@ func newClient() (*Client, error) {
 	}
 	model := os.Getenv("ANTHROPIC_MODEL")
 	if model == "" {
-		model = "claude-sonnet-4-5"
+		// This default will date. Ask the API what exists today:
+		//   curl -s https://api.anthropic.com/v1/models \
+		//     -H "x-api-key: $ANTHROPIC_API_KEY" \
+		//     -H "anthropic-version: 2023-06-01"
+		model = "claude-sonnet-5"
 	}
 	return &Client{
 		BaseURL: strings.TrimSuffix(base, "/"),

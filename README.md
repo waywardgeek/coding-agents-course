@@ -9,23 +9,51 @@ from.
 ## Layout
 
 ```
+book/                   chapter outlines (the text these graders serve)
 cmd/grade/              the Chapter 1 auto-grader CLI
 internal/fakeanthropic/ deterministic stand-in for the Messages API
 internal/grade/         script, process harness, checks, report
 solutions/ch01/         reference solution (the chapter's own code)
+scripts/live.sh         run a solution against the real API
 testdata/students/      deliberately defective submissions (grader self-test)
 ```
 
-## Quick start
+## Try it yourself
+
+**Grade the reference solution** — no API key, no network, no cost:
 
 ```bash
-go test ./...                      # grader self-test: does it catch real defects?
-go run ./cmd/grade ./solutions/ch01 # grade the reference solution
-go run ./cmd/grade -json ./mysubmission
+make grade                          # or: go run ./cmd/grade ./solutions/ch01
 ```
 
-Grading needs **no API key and no network**. The submission is pointed at a
-fake Anthropic server on localhost through `ANTHROPIC_BASE_URL`.
+**Grade your own submission** — point it at any package directory or built
+binary:
+
+```bash
+make grade-dir DIR=~/my-agent       # or: go run ./cmd/grade ~/my-agent
+go run ./cmd/grade -json ~/my-agent # machine-readable report
+```
+
+Exit status is 0 on a pass, 1 on a fail, 2 if the grader itself could not run.
+
+**Talk to it live**, against the real Anthropic API:
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+scripts/live.sh models   # which model IDs your key can actually use
+scripts/live.sh          # three scripted rounds + the token bill
+scripts/live.sh chat     # interactive REPL
+```
+
+`scripts/live.sh` never echoes your key. It reads `$ANTHROPIC_API_KEY`, else
+the file named by `$ANTHROPIC_API_KEY_FILE`, else `~/.cr/settings.json` if you
+happen to run CodeRhapsody. Override the model with `ANTHROPIC_MODEL=...`.
+
+**Check the grader itself** — does it catch real defects?
+
+```bash
+make test
+```
 
 ## Chapter 1 — the exercise contract
 
@@ -112,3 +140,8 @@ go run ./solutions/ch01 chat        # interactive REPL
 
 Leave `ANTHROPIC_BASE_URL` unset for `api.anthropic.com`, or point it at the
 course proxy.
+
+## License
+
+Apache License 2.0 — see [LICENSE](LICENSE). The solutions are teaching code:
+copy them, ship them, build on them.
