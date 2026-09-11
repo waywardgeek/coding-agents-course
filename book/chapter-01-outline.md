@@ -1,7 +1,9 @@
-# Chapter 1 — A Conversation, the Obvious Way (Outline, Draft 1)
+# Chapter 1 — A Conversation, the Obvious Way (Outline, Draft 2)
 
 **Book:** Building Advanced AI Coding Agents (working title)
-**Status:** outline for discussion. 2026-09-11.
+**Status:** draft 2 — the review in `book/review.md` (R1–R11) is applied, and
+every claim about the grading rig below was re-verified against the running
+code on 2026-09-11. Where outline and rig disagreed, the rig won.
 **Chapter thesis:** Hold a real multi-round conversation with Claude using the
 least machinery possible — the role-tagged message array that every tutorial,
 every framework, and the provider's own documentation teach. It works, and the
@@ -100,12 +102,38 @@ fine on day one.)
 
 ## 1.2 Anatomy of a Messages API request
 
-- Endpoint, `x-api-key`, `anthropic-version`.
+- Endpoint, `x-api-key`, `anthropic-version`, `content-type: application/json`.
 - `model`, `max_tokens` (required — and why the API refuses to guess).
 - `system` — a string outside the messages array (for now, one fixed line).
-- `messages` — the array of `{role, content}`; roles alternate
-  `user`/`assistant`.
+- `messages` — the array of `{role, content}`. Three rules, all enforced:
+  roles strictly alternate `user`/`assistant`; the conversation **begins**
+  with a `user` message; the **last** message is always the `user`'s —
+  otherwise there is nothing to answer. Content is never empty.
 - Response: `content`, `stop_reason`, `usage`.
+
+**The asymmetry that catches everyone once.** The request lets you send
+`content` as a bare string. The response never does — response `content` is
+always a list of typed blocks. Walk it and concatenate the `text` blocks. The
+field has the same name on both sides and a different shape; this is the
+classic day-one stumble.
+
+**Sidebar — ask the API which models exist.** Don't take a model ID from a
+blog post, a tutorial, or your own memory:
+
+```bash
+curl -s https://api.anthropic.com/v1/models \
+  -H "x-api-key: $ANTHROPIC_API_KEY" \
+  -H "anthropic-version: 2023-06-01"
+```
+
+An ID that *looks* current may be an alias that silently resolves to
+something much older, and nothing in the response will tell you so. This
+recommendation is earned: while building this book's grading rig I picked a
+model ID from memory because it looked familiar. It worked — and it was a
+year old. Ask; don't remember.
+
+*(Author note: every model ID printed in this book will age. The sidebar is
+the inoculation — it teaches the lookup, not the answer.)*
 
 ## 1.3 The obvious data structure
 
@@ -130,6 +158,10 @@ The one deep fact of the chapter: **the API is stateless.** The provider
 retains nothing between calls; every request replays the whole history. The
 conversation lives in *your* process or it lives nowhere.
 
+There is no retry here, and no backoff. If the API returns 429, this program
+dies. That is the honest state of a naive client, and we are not going to
+paper over it.
+
 ## 1.5 Usage is money
 
 Read `usage` on every response. Keep cumulative input/output token counts
@@ -137,14 +169,34 @@ from the very first request. Watch input tokens grow every round as the
 resent history lengthens. (No caching, no remedies — just the habit and the
 observed cost curve.)
 
+**The curve, measured.** Five rounds of the exercise against the grader's
+fake server, input tokens per round:
+
+| round | 1 | 2 | 3 | 4 | 5 |
+|---|---|---|---|---|---|
+| input tokens | 49 | 78 | 95 | 116 | 138 |
+
+Cumulative: 476 input, 65 output. Nothing in those five rounds got longer
+except the history you resend — the fifth question costs nearly three times
+the first, and it is the *same size question*. That is the whole economics of
+a stateless API in one row of numbers.
+
+These figures regenerate identically on any machine, because the fake's
+counter is deterministic; `make grade` prints them. Live against
+`claude-sonnet-5`, a three-round run cost 631 input / 388 output tokens.
+
 ## 1.6 Chat with it
 
 The payoff, and the point of the chapter: an interactive mode — plain
 terminal REPL, live via the course proxy (§1.7) — where the student *talks
 to a chatbot they built from raw HTTP*. Encourage playing: give it a personality via the
 system line, ask it about the code that created it, show a friend. This is
-deliberate: confidence and a little pride first. (Ungraded. The bond formed
-here is what Chapter 2's opening is aimed at.)
+deliberate: confidence and a little pride first. (Ungraded.)
+
+*(Author note — DO NOT PRINT: the bond formed here is precisely what Chapter
+2's cold opening is aimed at. Per the ambush ruling, Chapter 1 prose contains
+no forward reference to Chapter 2 of any kind. This note is scaffolding for
+the author, not a line of the chapter.)*
 
 ## 1.7 API access — the toll booth (and the course proxy)
 
@@ -176,6 +228,13 @@ The awkward truth, taught straight because it is part of the landscape:
   book prepares you to do — will run you on the order of **$10K in tokens**.
   That is the real tuition, it goes to the providers, and no route around it
   exists. Budget accordingly before starting.
+
+  To be clear about what is *not* costly: **every graded exercise in this
+  book runs against a local fake server.** Grading needs no API key, reaches
+  no network, and costs **$0** — as many times as you like. Only the optional
+  live smoke tests spend real money, and those cost pennies. You can complete
+  and pass every exercise in this chapter without spending anything. The
+  tuition above is what it costs to *build the real thing* afterwards.
 - **The happy accident:** the Chapter 1 program already targets
   `ANTHROPIC_BASE_URL` because the auto-grader's fake server needs it. The
   proxy is the same seam: fake server for grading, course proxy for live
@@ -193,26 +252,88 @@ rounds, then EOF → program prints `{"usage": {"input": i, "output": o}}` and
 exits 0. **Go required** — the book's code is Go, and later chapters build on
 this program.
 
+**stdout carries the protocol and nothing else** — one JSON object per line.
+Send logs, progress and diagnostics to **stderr**. A stray `fmt.Println` is a
+protocol violation and will be reported as one. (This is the single most
+common innocent failure in the exercise, because every programmer debugs with
+a print statement.)
+
+**Grader mode is the default.** The grader runs your binary with **no
+arguments**, so with no arguments your program must speak the stdio protocol.
+The REPL of §1.6 is opt-in: `./ch01 chat`. If your program greets a human on
+startup, it will hang the grader and you will get a timeout instead of a
+diagnosis.
+
+**The grader supplies three environment variables; read all three, hardcode
+none:**
+
+| variable | use |
+|---|---|
+| `ANTHROPIC_BASE_URL` | POST to `$BASE/v1/messages` |
+| `ANTHROPIC_API_KEY` | send as the `x-api-key` header |
+| `ANTHROPIC_MODEL` | put in the `model` field |
+
+A student who hardcodes the model passes the fake — which accepts any
+non-empty model — and then breaks on the live path and the proxy, far from
+the cause.
+
 **Grading rig — a fake Anthropic server.** The grader sets
 `ANTHROPIC_BASE_URL` to a local fake that validates every request and returns
-scripted responses. No API key, no cost, fully deterministic. What the fake
-checks:
+scripted responses. No API key, no cost, fully deterministic.
 
-1. **Wire correctness** — headers present, `max_tokens` set, roles strictly
-   alternating, valid JSON.
-2. **Cross-round memory (structural)** — the fake plants a fact in its
-   round-1 response and verifies the round-4 *request* still contains the
-   full history including that fact. A program that makes a fresh
-   single-message call per question fails automatically. This is the proof
-   that a conversation exists.
-3. **Growth** — request N+1 strictly contains request N's messages as a
-   prefix (append-only behavior).
-4. **Usage accounting** — final report present, nonzero, consistent with the
-   fake's returned usage fields.
+A design note worth internalizing, because you will build graders yourself
+later: **a malformed request still gets a 200.** The fake records every
+violation and judges afterwards, against recorded evidence. It does not
+reject on the first mistake. One run therefore tells you about *all* your
+bugs rather than one bug per run.
 
-**Two modes, one binary:** grader mode (the stdio contract above) and
-interactive mode (§1.6's REPL, live via proxy or the student's own API
-key). Same conversation code underneath.
+**The seven checks — 100 points, and all of them must pass:**
+
+| check | pts | property |
+|---|---|---|
+| `protocol` | 15 | one answer per round, clean exit 0, nothing but protocol on stdout |
+| `wire` | 15 | headers, `max_tokens`, valid JSON, alternating non-empty roles |
+| `calls` | 10 | exactly **one** API call per round |
+| `replies` | 10 | your answer equals the text the server actually returned |
+| `memory` | 25 | the round-4 request still carries the whole history |
+| `growth` | 15 | each request extends the previous one byte-for-byte |
+| `usage` | 10 | cumulative totals reported and **exactly** correct |
+
+There is no partial credit for a conversation that does not exist.
+
+Notes on the ones you cannot infer:
+
+- **`wire`** also requires `content-type: application/json`, a non-empty
+  `model`, non-empty message content, and **no streaming** (`stream: true` is
+  rejected). Roles must strictly alternate, the first message must be `user`,
+  and the last message must be `user`.
+- **`calls`** means exactly one API call per round. Plausible-looking designs
+  fail this: a warm-up call, a retry, a second call to summarize.
+- **`replies`** catches the laziest possible cheat — a program that never
+  parses the response at all. It is worth stating precisely *because* it is
+  unbeatable: invent the answer and you fail even if everything else passes.
+- **`memory`** is the proof that a conversation exists. The fake plants a
+  fact in its **round-1** response and checks that the **round-4** request
+  still contains it. You never type that fact; the server said it. It can
+  only be there if you appended the model's reply and resent everything.
+- **`usage`** is an **exact** match. After stdin closes, report cumulative
+  input and output totals equal to the sum of the `usage` fields of every
+  response. The fake's counter is deterministic — one token per four
+  characters, rounded up — which is a *grading device*, **not** a real
+  tokenizer. Infer nothing about real token math from it. Exact matching is
+  what catches a program that invents plausible numbers instead of summing.
+
+**Grade yourself, free, as often as you like:**
+
+```bash
+make grade-dir DIR=path/to/your/solution   # add -json for machine output
+```
+
+Exit 0 pass, 1 fail, 2 the grader could not run.
+
+**Two modes, one binary:** grader mode (the stdio contract above, the
+default) and interactive mode (§1.6's REPL, `./ch01 chat`, live via proxy or
+the student's own API key). Same conversation code underneath.
 
 **Optional live smoke test:** same program, live via the course proxy, three
 rounds. Not

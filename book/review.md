@@ -2,8 +2,42 @@
 
 **Reviewer:** CodeRhapsody · **Date:** 2026-09-11
 **Target:** `book/chapter-01-outline.md` (LGTM'd draft 1)
-**Status:** proposals only. Bill's rulings govern; suggested prose is a
-starting point, not finished text.
+**Status:** **APPLIED 2026-09-11** to `chapter-01-outline.md` (now draft 2).
+Kept in the repo as the rationale record — the outline states the rules, this
+states why each one is there.
+
+## Disposition
+
+All of R1–R11 applied; D1–D5 checked on a final pass and held. Three
+deviations, all additive:
+
+- **Every ground-truth claim was re-verified against the running code before
+  being written into the book**, not taken on the review's word. The seven
+  check IDs, the point split, the 49 → 78 → 95 → 116 → 138 curve (cumulative
+  476 in / 65 out), the three env vars, and grader-mode-as-default all
+  confirmed. `countTokens` is `ceil(len/4)` with a floor of 1 — the review's
+  "one token per four characters" is right, and the chapter now says
+  "rounded up".
+- **R6 survived a challenge.** A first grep found alternation but no
+  first/last role enforcement, which looked like the review overstating its
+  case. Reading `fake.go:246–254` directly showed both rules are enforced.
+  The review was right; the grep was too narrow.
+- **R5 extended.** Auditing the fake for *other* graded-but-unstated rules
+  turned up three more in the same defect class: `content-type:
+  application/json`, rejection of `stream: true`, and non-empty content. All
+  are now documented, since a rule that is enforced but unstated is the exact
+  failure mode R2 and R6 exist to fix.
+
+Two additions beyond the review: a `make grade-dir` invocation so students
+have a local feedback loop (R10 says grading is free but never said how), and
+the record-then-judge design note promoted into the chapter, because students
+build graders themselves later in the course.
+
+The review's method — rebuild the spec from the artifact that actually runs —
+was then applied forward to `chapter-02-outline.md`, whose exercise section
+was under-specified in the same way but more severely: it referenced
+interrupt directives, event-log serialization and replay without defining
+any of them. See that file's open questions 6–9.
 
 ---
 

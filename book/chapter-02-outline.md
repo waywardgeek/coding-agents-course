@@ -2,6 +2,9 @@
 
 **Building Advanced AI Coding Agents** — working outline, chapter 2 of N.
 Status: outline agreed in discussion 2026-09-11. Prose not yet written.
+Revised 2026-09-11 to apply the lessons of `book/review.md`: the exercise
+section is now specified to the level a grader can actually be built from,
+and four new design decisions are flagged for ruling (open questions 6–9).
 
 Predecessor: `chapter-01-outline.md` (naive Anthropic-specific chatbot,
 `[]{role, content string}`, ends clean and confident — the ambush ruling).
@@ -319,25 +322,100 @@ Rebuild the Chapter 1 chatbot on the real structures. **Observably
 identical from the outside** — same REPL, same stdio grader contract —
 which is itself the lesson: the rewrite bought properties, not features.
 
-Grader checks (all Chapter 1 checks, plus):
+Everything Chapter 1 established still holds and is not restated in the
+chapter prose: grader mode is the default (no arguments), stdout carries the
+protocol only, the three `ANTHROPIC_*` variables are read and never
+hardcoded, grading is free and offline, and the grader records violations
+and judges afterwards rather than rejecting on the first mistake.
 
-1. **Replay determinism**: two separate process invocations fed the same
-   event log must emit byte-identical requests. Catches wandering
-   timestamps and map-iteration serialization — the class of bugs that
-   later kills prefix caching, caught before caching is ever mentioned.
-2. **Redaction semantics**: after a `Redacted` event, the payload is absent
-   from the next rendered request but present in the serialized history.
-3. **Ephemera semantics**: injected data appears in exactly one request,
-   exactly once, never in the log's dialogue events.
-4. **Interrupt ordering**: grader scripts an interrupt directive between
-   rounds; subsequent tool-call events must be recorded in the log and
-   NOT executed, and the next request must be legal Anthropic JSON (the
-   renderer handled the dangling calls).
-5. **Usage accounting** from `ResponseEnded` events, cumulative.
+### The problem this section exists to solve
+
+Chapter 1's review taught a lesson at the author's expense: **an exercise
+spec that a grader cannot be built from is not a spec.** Four of that
+chapter's seven graded properties were never stated, and competent students
+would have failed for reasons the chapter never mentioned.
+
+Chapter 2 is worse in kind, not degree. "The grader scripts an interrupt
+between rounds" presumes a wire format for interrupts that does not exist.
+"Two invocations fed the same event log" presumes a log serialization and a
+way to feed it, neither of which exists. Those are specified below.
+
+### Surfaces the submission must expose
+
+Three, and the last two are new this chapter:
+
+| invocation | behavior |
+|---|---|
+| `./ch02` | grader mode — stdio JSON-lines (the default, as in Chapter 1) |
+| `./ch02 chat` | the REPL |
+| `./ch02 render LOG` | play `LOG` → context → render; print the vendor request JSON that *would* be sent, to stdout; exit 0. **Makes no network call.** |
+
+`render` is the centerpiece. It exposes
+`EventLog → Context → vendor request` as a pure function on the command
+line, which turns three otherwise-awkward properties — replay determinism,
+redaction, ephemera — into mechanical byte comparisons that need no server
+at all. If your architecture cannot offer this subcommand cheaply, your
+context is not actually separate from your transport, and that is the
+finding the exercise is designed to surface.
+
+### Control directives (extends the Chapter 1 stdio protocol)
+
+The grader writes one JSON object per line. `{"user": ...}` behaves exactly
+as in Chapter 1 and expects exactly one `{"assistant": ...}` reply. Every
+other object is a **directive** and expects exactly one `{"ok": true}`
+acknowledgement line.
+
+| directive | event injected |
+|---|---|
+| `{"interrupt": true}` | `Interrupted{}` |
+| `{"redact": <seq>}` | `Redacted{target_seq}` |
+| `{"ephemera": {"instruction": "...", "text": "..."}}` | `EphemeraSet` |
+| `{"dump": "<path>"}` | none — serialize the event log to `<path>`, flush, then ack |
+
+Directives are acknowledged rather than silent for the same reason Chapter 1
+demands one answer per round: it keeps the stream synchronous, so a hung
+submission produces a located failure instead of a bare timeout.
+
+### Log serialization
+
+JSON-lines, one event per line, ascending `Seq`. Each line carries at
+minimum `seq`, `type`, and the event's own fields; dialogue events carry
+`actor`. The format must round-trip: `dump` → `render` must work in a fresh
+process with no other state. Blobs may be inlined or written beside the log,
+your choice, as long as `render` needs nothing but the path it is given.
+
+### The checks — 100 points, all must pass
+
+| check | pts | property |
+|---|---|---|
+| `ch1parity` | 30 | all seven Chapter 1 checks still pass, unchanged |
+| `logdump` | 10 | log serializes and round-trips; `Seq` monotonic, never reused |
+| `replay` | 15 | two separate `render` invocations on the same log emit **byte-identical** requests |
+| `redaction` | 15 | after `Redacted`, the payload is absent from the rendered request and present in the dumped log |
+| `ephemera` | 10 | injected data appears in exactly one request, exactly once, and never in the log's dialogue events |
+| `interrupt` | 10 | post-interrupt `ToolCalled` events are recorded and **not executed**; the next rendered request is legal Anthropic JSON |
+| `usage` | 10 | cumulative totals derived from `ResponseEnded` events |
+
+Notes on the ones that carry the chapter's thesis:
+
+- **`replay`** is the deep one. It catches wandering timestamps and
+  map-iteration ordering — the exact bug class that later destroys prefix
+  caching, caught here, chapters before caching is mentioned. A log is a
+  fixed input; if two runs of a pure function over a fixed input disagree,
+  something non-deterministic leaked into your renderer.
+- **`redaction`** is the pair of assertions that proves History ≠ Context in
+  one line of grader code: gone from one artifact, still there in the other.
+  A design that conflates them cannot pass both halves simultaneously.
+- **`interrupt`** is where the reducer's totality gets tested. The grader
+  interrupts mid-turn and then feeds tool calls; recording them while
+  executing nothing is only possible if `Interrupted` is a real state.
+- **`ch1parity`** is deliberately worth less than the sum of its parts. The
+  rewrite is not supposed to buy features — it is supposed to keep them
+  while buying properties.
 
 ## Open questions
 
-None as of 2026-09-11 — all resolved by ruling:
+**Design questions — all resolved by ruling 2026-09-11:**
 
 1. **Room/InputPending**: CONFIRMED — input accumulates; the engine decides
    whether to respond; InputPending is not a commitment. (Homebrew-VTT use
@@ -351,3 +429,39 @@ None as of 2026-09-11 — all resolved by ruling:
    (signature / signed block) enters the context.
 5. Naming evolves as the book and the resulting agent get written
    (taxonomy v0).
+
+**Exercise-protocol questions — NEW, opened 2026-09-11, awaiting ruling.**
+
+These arose from applying the Chapter 1 review to this chapter. The exercise
+section above now carries my recommended answer to each, written as spec so
+the grader can be built; each is a genuine design decision and any of them
+may be overruled. They are listed here so a ruling is a deliberate act rather
+than a silent inheritance of my defaults.
+
+6. **The `render` subcommand.** I made `EventLog → rendered request` a CLI
+   surface (`./ch02 render LOG`) so replay, redaction and ephemera become
+   byte comparisons needing no server. It is the single biggest addition to
+   the exercise, and it constrains student architecture — it forces context
+   to be genuinely separable from transport. I think that constraint is the
+   chapter's thesis made executable rather than an imposition, but it is a
+   real constraint and it is yours to accept or reject.
+7. **Directives are acknowledged (`{"ok": true}`), not silent.** Keeps the
+   stdio stream synchronous so a hung submission fails with a location
+   instead of a timeout. Costs a small departure from Chapter 1's protocol,
+   which the student must notice.
+8. **Log format: JSON-lines, one event per line, ascending `Seq`.** Chosen
+   for greppability and so the grader can assert on the log with the same
+   tools it uses for requests. The alternative — a single JSON document —
+   round-trips just as well but is worse to debug at 3am.
+9. **Point weighting: `ch1parity` 30, the five new checks 70.** The
+   deliberate signal is that a rewrite which merely preserves Chapter 1's
+   behavior has not earned the chapter. If you'd rather parity dominate
+   (a rewrite that breaks the old contract is a failed rewrite, full stop),
+   the split should invert.
+
+**Not yet specified, and deliberately so:** the scripted session itself — how
+many rounds, where the interrupt lands, which `Seq` gets redacted. That is
+grader construction, not chapter content, and it should be written with the
+rig in front of us rather than guessed at here. Chapter 1's script was chosen
+that way and the memory probe's design (plant in round 1, check in round 4)
+came out of building it, not out of the outline.
