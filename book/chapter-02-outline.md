@@ -236,8 +236,9 @@ The context is **vendor-independent by construction**, and this chapter is the
 only one that can prove it.
 
 Contents: the dialogue (ordered, actor-attributed, parts-structured), pending
-ephemera, redaction state, token accounting, and opaque per-model replay
-material carried but never interpreted.
+ephemera, token accounting, and opaque per-model replay
+material carried but never interpreted. Redacted content is not tracked
+separately — it is replaced in place by the reducer (§2.4a).
 
 **Content is Parts, not a string.** Text, tool calls, tool results, images,
 audio, and vendor-opaque blobs. A string is the Chapter 1 mistake wearing a
@@ -339,6 +340,11 @@ type TextPart   struct{ Text string }
 type BlobPart   struct{ MIME, Path string } // on disk, never inline
 type OpaquePart struct{ From Provenance; Data json.RawMessage }
 
+// The RESULT of applying a Redacted event. Replaces the parts it supersedes;
+// nothing records "a redaction happened" separately — the log already does.
+// The stub is informative on purpose: what it was, and how to get it back.
+type RedactedPart struct{ Stub string }
+
 type ToolCallPart struct {
     CallID string // the ID AS ISSUED, by the model named in From
     From   Provenance
@@ -417,9 +423,8 @@ independently will collide.
 type Context struct {
     Turn     TurnState
     Dialogue []Entry
-    Ephemera []Part        // pending; delivered once, then cleared
-    Redacted map[Seq]bool  // supersessions already applied
-    Usage    Usage         // running totals, vendor-normalized
+    Ephemera []Part // pending; delivered once, then cleared
+    Usage    Usage  // running totals, vendor-normalized
 }
 
 type Entry struct {
@@ -427,6 +432,37 @@ type Entry struct {
     Parts []Part
 }
 ```
+
+**No field in the context may grow without bound.** State it as a rule, because
+it is cheap to honour now and very expensive to retrofit.
+
+The context is not a request buffer. It is the current state of an actor that
+may run for **years** — memory, identity, recent conversation, everything the
+model knows about itself. Anything in it that only ever accumulates is a slow
+leak with a long fuse, and the fuse burns in production, on the agent you care
+most about, long after the design decision is unrecoverable.
+
+An earlier draft of this chapter had `Redacted map[Seq]bool` in the context, to
+remember which events had been superseded. It is a natural thing to write and
+it is wrong twice over:
+
+- **It grows forever.** One entry per redaction, retained for the life of the
+  actor, and nothing ever removes them.
+- **It is redundant.** The log already records every `Redacted` event,
+  permanently. The context does not need to remember that a redaction
+  *happened*; it needs to hold the content that redaction *produced*.
+
+Deleting it removes a field and a failure mode at the same time, which is
+usually the sign of a correct simplification. A redaction is not metadata about
+content — **it is content**, and the context holds the result of replaying the
+log, exactly as §2.1 promised.
+
+Apply the same lens to every field and one survivor stands out: `Dialogue`
+grows too. It is bounded by a *policy* — compaction and retention, a later
+chapter — rather than by its shape, and the shape survives compaction unchanged
+because compaction replaces entries with a summary entry. That is the
+distinction to hold: `Dialogue` grows and has a plan; the map grew and had
+none.
 
 **Note what is absent: there is nowhere to put system prompt text.** That is
 deliberate and structural. The system prompt is an *output*, computed by the
@@ -497,7 +533,7 @@ uses yet. Answer honestly, in the text:
 | `BlobPart.Path` | not exercised | Ch3, when tool output arrives by the megabyte |
 | `OpaquePart` | thinking signatures | every chapter; never interpreted |
 | `TurnState.ToolsPending` | replaying supplied logs | Ch3 |
-| `Redacted` | fully exercised | Ch7 |
+| `RedactedPart` | fully exercised | Ch7 |
 
 This table is the write-once discipline made visible, and it is the chapter's
 answer to "am I over-engineering?" — no, and here is the receipt.
