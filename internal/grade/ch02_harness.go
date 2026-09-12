@@ -1,464 +1,378 @@
 package grade
 
-// The Chapter 2 harness.
+// Chapter 2 harness: drive the submission through every phase the chapter's
+// checks need, recording evidence and judging nothing.
 //
-// Three phases, in order:
-//
-//	1. Chapter 1 parity — the Chapter 1 fake, script and checks, unchanged,
-//	   pointed at the Chapter 2 binary. The rewrite has to keep what it had.
-//	2. The Chapter 2 session — a tool-driving fake that HOLDS ITS REPLY OPEN
-//	   at two chosen moments. That is the whole trick: the grader types at a
-//	   program which is provably blocked on an HTTP request it already sent.
-//	   A round-synchronous program cannot acknowledge anything in that window,
-//	   so "received while blocked" is not a matter of opinion.
-//	3. Replay — `render LOG` twice, with no server involvement, byte-compared.
+// Record then judge. One run surfaces every bug the student has, instead of
+// one bug per run.
 
 import (
 	"bufio"
-	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
-	"github.com/waywardgeek/coding-agents-course/internal/fakeanthropic"
+	"github.com/waywardgeek/coding-agents-course/internal/fakevendor"
 )
 
-const (
-	Ch2RoundTimeout = 40 * time.Second
-	Ch2AckTimeout   = 10 * time.Second
-	// GateWindow is how long the fake holds its reply open waiting for the
-	// submission to acknowledge a directive typed mid-request.
-	GateWindow = 10 * time.Second
-	// DrainWindow is how long to wait after an interrupt for any output the
-	// submission chooses to emit for the dead turn.
-	DrainWindow = 3 * time.Second
-)
+const Ch2Timeout = 45 * time.Second
 
-// Ch2Result is the evidence from one Chapter 2 grading run. Nothing here is a
-// judgement; ch02_checks.go turns it into verdicts.
+// Vendors, in the order the chapter fixes: the alien one goes LAST, so that
+// "the third was nearly free" cannot be true merely because the third was easy.
+var Ch2Vendors = []string{"anthropic", "openai", "gemini"}
+
+// VendorSession is the evidence from one live session against one fake vendor.
+type VendorSession struct {
+	Vendor   string
+	Answers  []string
+	Usage    *Ch2Usage
+	Requests []fakevendor.Recorded
+	DumpOut  string // stdout of `ch02 dump`
+	DumpErr  string
+	Log      []Ch2LogLine
+	LogErr   string
+	Stderr   string
+	Extra    []string
+	Protocol []string
+}
+
+type Ch2Usage struct {
+	Input      int `json:"input"`
+	CacheWrite int `json:"cache_write"`
+	CacheRead  int `json:"cache_read"`
+	Output     int `json:"output"`
+}
+
+// Ch2Result is all evidence from all phases.
 type Ch2Result struct {
-	Parity []Check // the seven Chapter 1 checks, re-run against this binary
+	Ch1     []Check // the seven Chapter 1 checks, re-run unchanged
+	Ch1Err  string
+	Session map[string]*VendorSession
 
-	Answers   map[string]string // step label -> assistant text
-	Acked     map[string]bool   // step label -> directive acknowledged
-	Protocol  []string
-	Extra     []string
-	Stderr    string
-	ExitCode  int
-	ExitError string
-	UsageSeen bool
-	UsageIn   int
-	UsageOut  int
+	// UsageProbe exercises the cache-WRITE category, which only two of the
+	// three vendors report at all.
+	UsageProbe map[string]*VendorSession
 
-	Records   []fakeanthropic.ToolRecord
-	FakeUsage fakeanthropic.Usage
-	Capped    map[string]bool
-	Continued map[string]bool
+	// render phases — no network, no key
+	Render      map[string]string // vendor -> rendered exhibit request
+	RenderTwice map[string]string // second render of the same log
+	RenderErr   map[string]string
+	Redacted    map[string]string // render of a log containing a Redacted event
+	RedactedErr map[string]string
 
-	HintAcked      bool
-	HintAckLatency time.Duration
-	HintGateFired  bool
-	IntAcked       bool
-	IntGateFired   bool
-	AnswerAfterInt bool
+	// ephemera phase
+	Ephemera *VendorSession
 
-	EarlyLog    []LogEvent
-	FinalLog    []LogEvent
-	LogErr      string
-	RedactSeq   int
-	RedactFound bool
+	// logdump phase: dump from a live session, re-rendered in a fresh process
+	RoundTripOut string
+	RoundTripErr string
 
-	RenderOut1          []byte
-	RenderOut2          []byte
-	RenderErr           string
-	RenderCalledNetwork bool
+	Stderr   string
+	Protocol []string
 }
 
-// ch2Line is every shape the program may write to stdout.
-type ch2Line struct {
-	Assistant *string `json:"assistant,omitempty"`
-	OK        *bool   `json:"ok,omitempty"`
-	Usage     *struct {
-		Input  int `json:"input"`
-		Output int `json:"output"`
-	} `json:"usage,omitempty"`
+// ch2Replies is the scripted session. Round 2 returns a tool call and is the
+// LAST round: Chapter 2 executes no tools, so nothing answers it, and no
+// further request is made that would carry a dangling call.
+func ch2Replies(vendor string) []fakevendor.Reply {
+	toolID := map[string]string{
+		"anthropic": "toolu_fake_1",
+		"openai":    "call_fake_1",
+		"gemini":    "fc_fake_1",
+	}[vendor]
+	return []fakevendor.Reply{
+		{
+			Text:  "Reading the configuration now.",
+			Usage: fakevendor.Canonical{Input: 100, CacheWrite: 0, CacheRead: 50, Output: 30},
+			// Gemini reports thoughts DISJOINT from candidates. A parser that
+			// assumes they are included undercounts output by a third here.
+			GeminiThoughts: 10,
+		},
+		{
+			Text:           "Here is what I found.",
+			ToolName:       "read_file",
+			ToolArgs:       `{"path":"config.json","limit":40}`,
+			ToolID:         toolID,
+			Usage:          fakevendor.Canonical{Input: 12, CacheWrite: 0, CacheRead: 200, Output: 8},
+			GeminiThoughts: 3,
+		},
+	}
 }
 
-type reader struct {
-	answers chan string
-	acks    chan bool
-	usage   chan ch2Line
-	junk    chan string
-	done    chan struct{}
-}
-
-// Ch2Run executes all three phases and returns the evidence.
 func Ch2Run(bin string) (*Ch2Result, error) {
 	res := &Ch2Result{
-		Answers:   map[string]string{},
-		Acked:     map[string]bool{},
-		Capped:    map[string]bool{},
-		Continued: map[string]bool{},
+		Session:     map[string]*VendorSession{},
+		UsageProbe:  map[string]*VendorSession{},
+		Render:      map[string]string{},
+		RenderTwice: map[string]string{},
+		RenderErr:   map[string]string{},
+		Redacted:    map[string]string{},
+		RedactedErr: map[string]string{},
 	}
 
-	// --- phase 1: Chapter 1 parity -------------------------------------
-	parity, err := Run(bin)
-	if err != nil {
-		return nil, fmt.Errorf("chapter 1 parity run: %w", err)
-	}
-	res.Parity = Evaluate(parity)
-
-	// --- phase 2: the Chapter 2 session --------------------------------
-	tmp, err := os.MkdirTemp("", "course-ch02-")
-	if err != nil {
-		return nil, err
-	}
-	defer os.RemoveAll(tmp)
-	earlyPath := filepath.Join(tmp, "log-early.jsonl")
-	finalPath := filepath.Join(tmp, "log-final.jsonl")
-
-	fake := &fakeanthropic.ToolServer{Turns: Ch2Turns}
-	baseURL, err := fake.Start()
-	if err != nil {
-		return nil, fmt.Errorf("starting fake server: %w", err)
-	}
-	defer fake.Close()
-
-	cmd := exec.Command(bin)
-	cmd.Env = append(os.Environ(),
-		"ANTHROPIC_BASE_URL="+baseURL,
-		"ANTHROPIC_API_KEY=sk-ant-course-grader-fake",
-		"ANTHROPIC_MODEL=claude-fake-course-2",
-		"ANTHROPIC_API_URL="+baseURL,
-	)
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		return nil, err
-	}
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, err
-	}
-	var stderr strings.Builder
-	cmd.Stderr = &stderr
-	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("starting submission: %w", err)
-	}
-
-	rd := &reader{
-		answers: make(chan string, 64),
-		acks:    make(chan bool, 64),
-		usage:   make(chan ch2Line, 8),
-		junk:    make(chan string, 64),
-		done:    make(chan struct{}),
-	}
-	go func() {
-		sc := bufio.NewScanner(stdout)
-		sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
-		for sc.Scan() {
-			line := strings.TrimSpace(sc.Text())
-			if line == "" {
-				continue
-			}
-			var pl ch2Line
-			if err := json.Unmarshal([]byte(line), &pl); err != nil {
-				rd.junk <- line
-				continue
-			}
-			switch {
-			case pl.Assistant != nil:
-				rd.answers <- *pl.Assistant
-			case pl.OK != nil:
-				rd.acks <- *pl.OK
-			case pl.Usage != nil:
-				rd.usage <- pl
-			default:
-				rd.junk <- line
-			}
-		}
-		close(rd.done)
-	}()
-
-	var writeMu sync.Mutex
-	write := func(v any) error {
-		b, _ := json.Marshal(v)
-		writeMu.Lock()
-		defer writeMu.Unlock()
-		_, err := stdin.Write(append(b, '\n'))
-		return err
-	}
-
-	// The gate. Called on the fake's HTTP goroutine, with the submission's
-	// request still unanswered.
-	fake.Hook = func(info fakeanthropic.HookInfo) {
-		var directive any
-		switch info.Turn {
-		case "hint-loop":
-			res.HintGateFired = true
-			directive = map[string]any{"hint": HintText}
-		case "interrupt-loop":
-			res.IntGateFired = true
-			directive = map[string]any{"interrupt": true}
-		default:
-			return
-		}
-		start := time.Now()
-		if err := write(directive); err != nil {
-			res.Protocol = append(res.Protocol,
-				fmt.Sprintf("could not write the %s directive: %v", info.Turn, err))
-			return
-		}
-		select {
-		case <-rd.acks:
-			if info.Turn == "hint-loop" {
-				res.HintAcked = true
-				res.HintAckLatency = time.Since(start)
-				res.Acked["hint"] = true
-			} else {
-				res.IntAcked = true
-				res.Acked["interrupt"] = true
-			}
-		case <-time.After(GateWindow):
-			// No acknowledgement while blocked. Release anyway: the point is
-			// to diagnose, not to hang.
-		case <-rd.done:
-		}
-	}
-
-	drainJunk := func() {
-		for {
-			select {
-			case l := <-rd.junk:
-				res.Extra = append(res.Extra, l)
-			default:
-				return
-			}
-		}
-	}
-
-	awaitAnswer := func(label string) {
-		select {
-		case a := <-rd.answers:
-			res.Answers[label] = a
-		case <-time.After(Ch2RoundTimeout):
-			res.Protocol = append(res.Protocol,
-				fmt.Sprintf("step %q: no {\"assistant\": ...} line within %s", label, Ch2RoundTimeout))
-		case <-rd.done:
-			res.Protocol = append(res.Protocol,
-				fmt.Sprintf("step %q: the program's stdout closed before it answered", label))
-		}
-		drainJunk()
-	}
-
-	awaitAck := func(label string) {
-		select {
-		case <-rd.acks:
-			res.Acked[label] = true
-		case <-time.After(Ch2AckTimeout):
-			res.Protocol = append(res.Protocol,
-				fmt.Sprintf("step %q: no {\"ok\": true} acknowledgement within %s", label, Ch2AckTimeout))
-		case <-rd.done:
-			res.Protocol = append(res.Protocol,
-				fmt.Sprintf("step %q: the program's stdout closed before it acknowledged", label))
-		}
-		drainJunk()
-	}
-
-	for _, step := range Ch2Steps {
-		switch step.Kind {
-		case StepUser:
-			if err := write(map[string]any{"user": step.User}); err != nil {
-				res.Protocol = append(res.Protocol,
-					fmt.Sprintf("step %q: could not write to stdin (%v) — did the program exit?", step.Label, err))
-				goto finished
-			}
-			if step.Interrupted {
-				// A killed turn owes no answer. Accept one if it comes (some
-				// designs emit the partial text) but do not require it.
-				select {
-				case a := <-rd.answers:
-					res.AnswerAfterInt = true
-					res.Answers[step.Label] = a
-				case <-time.After(DrainWindow):
-				case <-rd.done:
-				}
-				drainJunk()
-				continue
-			}
-			awaitAnswer(step.Label)
-
-		case StepDirective:
-			d := map[string]any{}
-			for k, v := range step.Directive {
-				d[k] = v
-			}
-			switch step.Label {
-			case "dump-early":
-				d["dump"] = earlyPath
-			case "dump-final":
-				d["dump"] = finalPath
-			case "redact":
-				if !res.RedactFound {
-					// Nothing to redact; still send the directive so the
-					// stream stays synchronous, but aim it at a seq that
-					// cannot exist so the failure is legible.
-					d["redact"] = -1
-				} else {
-					d["redact"] = res.RedactSeq
-				}
-			}
-			if err := write(d); err != nil {
-				res.Protocol = append(res.Protocol,
-					fmt.Sprintf("step %q: could not write to stdin (%v)", step.Label, err))
-				goto finished
-			}
-			awaitAck(step.Label)
-			if step.Label == "dump-early" && res.Acked["dump-early"] {
-				if log, err := ParseLog(earlyPath); err != nil {
-					res.LogErr = fmt.Sprintf("early dump: %v", err)
-				} else {
-					res.EarlyLog = log
-					if ev, ok := FindPayload(log, RedactCanary); ok && ev.SeqOK {
-						res.RedactSeq, res.RedactFound = ev.Seq, true
-					}
-				}
-			}
-		}
-	}
-
-finished:
-	_ = stdin.Close()
-
-	// Everything after EOF: the usage line, then exit.
-	deadline := time.After(Ch2AckTimeout)
-collect:
-	for {
-		select {
-		case u := <-rd.usage:
-			res.UsageSeen = true
-			res.UsageIn = u.Usage.Input
-			res.UsageOut = u.Usage.Output
-		case l := <-rd.junk:
-			res.Extra = append(res.Extra, l)
-		case a := <-rd.answers:
-			res.Extra = append(res.Extra, fmt.Sprintf("{\"assistant\": %q} after stdin closed", truncate(a, 80)))
-		case <-rd.done:
-			break collect
-		case <-deadline:
-			break collect
-		}
-	}
-
-	done := make(chan error, 1)
-	go func() { done <- cmd.Wait() }()
-	select {
-	case err := <-done:
-		if err != nil {
-			var ee *exec.ExitError
-			if errors.As(err, &ee) {
-				res.ExitCode = ee.ExitCode()
-			} else {
-				res.ExitCode = -1
-			}
-			res.ExitError = err.Error()
-		}
-	case <-time.After(ExitTimeout):
-		_ = cmd.Process.Kill()
-		res.ExitCode = -1
-		res.ExitError = "program did not exit after stdin was closed"
-	}
-
-	// Drain anything the reader still has buffered.
-	for {
-		select {
-		case u := <-rd.usage:
-			res.UsageSeen = true
-			res.UsageIn, res.UsageOut = u.Usage.Input, u.Usage.Output
-			continue
-		case l := <-rd.junk:
-			res.Extra = append(res.Extra, l)
-			continue
-		default:
-		}
-		break
-	}
-
-	res.Stderr = stderr.String()
-	res.Records = fake.Records()
-	res.FakeUsage = fake.TotalUsage()
-	for _, t := range Ch2Turns {
-		res.Capped[t.Name] = fake.Capped(t.Name)
-		res.Continued[t.Name] = fake.ContinuedAfterStop(t.Name)
-	}
-
-	if log, err := ParseLog(finalPath); err != nil {
-		if res.LogErr == "" {
-			res.LogErr = fmt.Sprintf("final dump: %v", err)
-		}
+	// --- phase 1: Chapter 1 parity, using Chapter 1's own harness ----------
+	if r1, err := Run(bin); err != nil {
+		res.Ch1Err = err.Error()
 	} else {
-		res.FinalLog = log
+		res.Ch1 = Evaluate(r1)
 	}
 
-	// --- phase 3: replay ------------------------------------------------
-	if len(res.FinalLog) > 0 {
-		before := len(fake.Records())
-		out1, err1 := runRender(bin, finalPath, baseURL)
-		out2, err2 := runRender(bin, finalPath, baseURL)
-		after := len(fake.Records())
-		res.RenderCalledNetwork = after > before
-		res.RenderOut1, res.RenderOut2 = out1, out2
-		switch {
-		case err1 != nil:
-			res.RenderErr = err1.Error()
-		case err2 != nil:
-			res.RenderErr = err2.Error()
+	work, err := os.MkdirTemp("", "ch02-grade-")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(work)
+
+	// --- phase 2: one live session per vendor ------------------------------
+	for _, vendor := range Ch2Vendors {
+		s, err := runVendorSession(bin, work, vendor)
+		if err != nil {
+			return nil, err
 		}
-		res.Records = fake.Records()
-	} else if res.RenderErr == "" {
-		res.RenderErr = "no event log was dumped, so render could not be exercised"
+		res.Session[vendor] = s
+	}
+
+	// --- phase 3: ephemera -------------------------------------------------
+	eph, err := runEphemeraSession(bin, work)
+	if err != nil {
+		return nil, err
+	}
+	res.Ephemera = eph
+
+	// --- phase 3b: cache-write probe ---------------------------------------
+	for _, vendor := range Ch2Vendors {
+		s, err := runUsageProbe(bin, work, vendor)
+		if err != nil {
+			return nil, err
+		}
+		res.UsageProbe[vendor] = s
+	}
+
+	// --- phase 4: render, twice, for each vendor ---------------------------
+	exhibit := filepath.Join(work, "exhibit.log")
+	if err := os.WriteFile(exhibit, []byte(ExhibitLog), 0o644); err != nil {
+		return nil, err
+	}
+	redactLog := filepath.Join(work, "redacted.log")
+	if err := os.WriteFile(redactLog, []byte(RedactionLog), 0o644); err != nil {
+		return nil, err
+	}
+	for _, vendor := range Ch2Vendors {
+		out, errOut, _ := runOnce(bin, work, vendorEnv(vendor, "", work), "render", exhibit)
+		res.Render[vendor] = out
+		if strings.TrimSpace(out) == "" {
+			res.RenderErr[vendor] = errOut
+		}
+		out2, _, _ := runOnce(bin, work, vendorEnv(vendor, "", work), "render", exhibit)
+		res.RenderTwice[vendor] = out2
+
+		rout, rerr, _ := runOnce(bin, work, vendorEnv(vendor, "", work), "render", redactLog)
+		res.Redacted[vendor] = rout
+		if strings.TrimSpace(rout) == "" {
+			res.RedactedErr[vendor] = rerr
+		}
+	}
+
+	// --- phase 5: dump -> render in a FRESH process ------------------------
+	if s := res.Session["anthropic"]; s != nil && strings.TrimSpace(s.DumpOut) != "" {
+		rt := filepath.Join(work, "roundtrip.log")
+		if err := os.WriteFile(rt, []byte(s.DumpOut), 0o644); err == nil {
+			out, errOut, _ := runOnce(bin, work, vendorEnv("anthropic", "", work), "render", rt)
+			res.RoundTripOut = out
+			res.RoundTripErr = errOut
+		}
 	}
 
 	return res, nil
 }
 
-// runRender executes `bin render LOG` and returns its stdout. The fake's base
-// URL is passed deliberately: if the submission renders by calling the API,
-// the request lands on the fake and the grader sees it.
-func runRender(bin, logPath, baseURL string) ([]byte, error) {
-	cmd := exec.Command(bin, "render", logPath)
-	cmd.Env = append(os.Environ(),
-		"ANTHROPIC_BASE_URL="+baseURL,
-		"ANTHROPIC_API_KEY=sk-ant-course-grader-fake",
-		"ANTHROPIC_MODEL=claude-fake-course-2",
-		"ANTHROPIC_API_URL="+baseURL,
+func vendorEnv(vendor, baseURL, work string) []string {
+	env := append(os.Environ(),
+		"LLM_VENDOR="+vendor,
+		"LLM_API_KEY=course-grader-fake",
+		"LLM_MODEL="+ch2RequestedModel(vendor),
+		"CH02_LOG="+filepath.Join(work, "ch02-"+vendor+".log"),
 	)
-	var out, errb bytes.Buffer
+	if baseURL != "" {
+		env = append(env,
+			"LLM_BASE_URL="+baseURL,
+			"ANTHROPIC_BASE_URL="+baseURL,
+			"OPENAI_BASE_URL="+baseURL,
+			"GEMINI_BASE_URL="+baseURL,
+		)
+	}
+	return env
+}
+
+func ch2RequestedModel(vendor string) string {
+	switch vendor {
+	case "openai":
+		return "gpt-5-course"
+	case "gemini":
+		return "gemini-3.5-flash-course"
+	default:
+		return "claude-sonnet-5-course"
+	}
+}
+
+func runVendorSession(bin, work, vendor string) (*VendorSession, error) {
+	fake := fakevendor.New(ch2Replies(vendor))
+	defer fake.Close()
+
+	s := &VendorSession{Vendor: vendor}
+	env := vendorEnv(vendor, fake.URL(), work)
+
+	lines := []string{
+		`{"user":"read the configuration"}`,
+		`{"user":"now summarize it"}`,
+	}
+	stdout, stderr, _ := runWithStdin(bin, work, env, nil, lines)
+	s.Stderr = stderr
+	parseCh2Stdout(s, stdout)
+	s.Requests = fake.Requests()
+
+	// `dump` runs in a FRESH process, reading only what was persisted.
+	dumpOut, dumpErr, _ := runOnce(bin, work, env, "dump")
+	s.DumpOut, s.DumpErr = dumpOut, dumpErr
+	s.Log, s.LogErr = parseLogLines(dumpOut)
+	return s, nil
+}
+
+// runUsageProbe exercises the cache-WRITE category in isolation.
+//
+// Only Anthropic and OpenAI report a cache-write token count at all. Gemini
+// reports none anywhere in usageMetadata — the cost exists (Google bills cache
+// storage by duration) but no token count is attached to any response. The
+// honest canonical answer for Gemini is therefore zero, and the grader expects
+// zero rather than an invented number.
+func runUsageProbe(bin, work, vendor string) (*VendorSession, error) {
+	fake := fakevendor.New([]fakevendor.Reply{{
+		Text:           "Cached and ready.",
+		Usage:          fakevendor.Canonical{Input: 7, CacheWrite: 300, CacheRead: 0, Output: 11},
+		GeminiThoughts: 4,
+	}})
+	defer fake.Close()
+
+	s := &VendorSession{Vendor: vendor}
+	env := vendorEnv(vendor, fake.URL(), work)
+	env = append(env, "CH02_LOG="+filepath.Join(work, "ch02-usage-"+vendor+".log"))
+
+	stdout, stderr, _ := runWithStdin(bin, work, env, nil, []string{`{"user":"warm the cache"}`})
+	s.Stderr = stderr
+	parseCh2Stdout(s, stdout)
+	s.Requests = fake.Requests()
+	return s, nil
+}
+
+func runEphemeraSession(bin, work string) (*VendorSession, error) {
+	fake := fakevendor.New(ch2Replies("anthropic"))
+	defer fake.Close()
+
+	s := &VendorSession{Vendor: "anthropic"}
+	env := vendorEnv("anthropic", fake.URL(), work)
+	env = append(env, "CH02_LOG="+filepath.Join(work, "ch02-ephemera.log"))
+
+	lines := []string{
+		`{"ephemeral":"CURRENT_TIME=2026-09-12T00:00:00Z SCREEN=terminal"}`,
+		`{"user":"what time is it"}`,
+		`{"user":"and again"}`,
+	}
+	stdout, stderr, _ := runWithStdin(bin, work, env, nil, lines)
+	s.Stderr = stderr
+	parseCh2Stdout(s, stdout)
+	s.Requests = fake.Requests()
+	return s, nil
+}
+
+// parseCh2Stdout reads the program's stdout, recording protocol violations
+// rather than judging them.
+func parseCh2Stdout(s *VendorSession, stdout string) {
+	for _, line := range strings.Split(stdout, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		var m map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(line), &m); err != nil {
+			s.Protocol = append(s.Protocol, fmt.Sprintf("stdout line is not JSON: %.80q", line))
+			s.Extra = append(s.Extra, line)
+			continue
+		}
+		switch {
+		case m["assistant"] != nil:
+			var v string
+			_ = json.Unmarshal(m["assistant"], &v)
+			s.Answers = append(s.Answers, v)
+		case m["ack"] != nil:
+			var v string
+			_ = json.Unmarshal(m["ack"], &v)
+			s.Protocol = append(s.Protocol, "ack:"+v)
+		case m["usage"] != nil:
+			var u Ch2Usage
+			if err := json.Unmarshal(m["usage"], &u); err != nil {
+				s.Protocol = append(s.Protocol, "usage line did not parse: "+err.Error())
+				continue
+			}
+			s.Usage = &u
+		case m["error"] != nil:
+			var v string
+			_ = json.Unmarshal(m["error"], &v)
+			s.Protocol = append(s.Protocol, "program reported error: "+v)
+		default:
+			s.Extra = append(s.Extra, line)
+		}
+	}
+}
+
+// --- process plumbing ------------------------------------------------------
+
+func runWithStdin(bin, dir string, env []string, args []string, lines []string) (string, string, int) {
+	cmd := exec.Command(bin, args...)
+	cmd.Dir = dir
+	cmd.Env = env
+
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return "", err.Error(), -1
+	}
+	var out, errb strings.Builder
 	cmd.Stdout = &out
 	cmd.Stderr = &errb
-	err := cmd.Start()
-	if err != nil {
-		return nil, err
+	if err := cmd.Start(); err != nil {
+		return "", err.Error(), -1
 	}
-	fin := make(chan error, 1)
-	go func() { fin <- cmd.Wait() }()
+
+	go func() {
+		w := bufio.NewWriter(stdin)
+		for _, l := range lines {
+			w.WriteString(l)
+			w.WriteByte('\n')
+			w.Flush()
+			time.Sleep(20 * time.Millisecond)
+		}
+		stdin.Close()
+	}()
+
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
 	select {
-	case err = <-fin:
-	case <-time.After(Ch2AckTimeout):
+	case err := <-done:
+		code := 0
+		if ee, ok := err.(*exec.ExitError); ok {
+			code = ee.ExitCode()
+		}
+		return out.String(), errb.String(), code
+	case <-time.After(Ch2Timeout):
 		_ = cmd.Process.Kill()
-		return nil, errors.New("render did not exit")
+		<-done
+		return out.String(), errb.String() + "\n[grader] timed out", -1
 	}
-	if err != nil {
-		return out.Bytes(), fmt.Errorf("`render %s` failed: %v; stderr: %s",
-			filepath.Base(logPath), err, truncate(errb.String(), 300))
-	}
-	if len(bytes.TrimSpace(out.Bytes())) == 0 {
-		return out.Bytes(), errors.New("`render` printed nothing to stdout")
-	}
-	return out.Bytes(), nil
+}
+
+func runOnce(bin, dir string, env []string, args ...string) (string, string, int) {
+	return runWithStdin(bin, dir, env, args, nil)
 }

@@ -50,7 +50,7 @@ func main() {
 			os.Exit(2)
 		}
 		report = grade.NewTitledReport(
-			"Chapter 2 — The Real Data Structures", grade.Ch2Evaluate(res), res.Stderr)
+			"Chapter 2 — One Log, Three Vendors", grade.Ch2Evaluate(res), res.Stderr)
 	default:
 		fmt.Fprintf(os.Stderr, "grader: no grader for chapter %d yet\n", *chapter)
 		os.Exit(2)

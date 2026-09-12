@@ -1,197 +1,182 @@
 package grade
 
-// Mutation testing for the Chapter 2 grader.
+// Mutation tests: proof that the grader is SENSITIVE, not merely green.
 //
-// A grader that passes the reference solution has demonstrated nothing. The
-// question is whether it FAILS when it should, on the specific check that
-// names the defect — a grader that fails everything whenever anything is
-// wrong is as useless as one that fails nothing.
+// Each mutation breaks exactly one thing in the reference solution and asserts
+// the EXACT SET of check ids that fail. Asserting the exact set, rather than
+// "something failed", is what catches a check that fires for the wrong reason
+// — which is the failure mode that makes a grader worse than useless, because
+// it is confidently wrong in the student's favour.
 //
-// So each mutation applies one surgical patch to a copy of the reference
-// solution and asserts the EXACT SET of failing check ids. If a patch no
-// longer matches the solution's source, the test fails loudly rather than
-// silently grading an unmutated program.
+// A mutation that does not apply is a test that silently passes. Every edit
+// below asserts that it actually changed the source.
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"testing"
 )
 
-type patch struct {
-	file string
-	old  string
-	new  string
+type edit struct {
+	file    string
+	pattern string // regexp, tolerant of gofmt's alignment padding
+	repl    string
 }
 
 type mutation struct {
-	name    string
-	why     string
-	patches []patch
-	expect  []string // check ids expected to FAIL
+	name string
+	// why records what real student mistake this models.
+	why      string
+	edits    []edit
+	extra    string // optional extra .go file contents
+	wantFail []string
 }
 
 var mutations = []mutation{
 	{
-		name:   "control",
-		why:    "the unmodified reference solution",
-		expect: nil,
+		name:     "provenance-model-dropped",
+		why:      "parser forgets to record which model answered",
+		edits:    []edit{{"anthropic.go", `Model:\s*resp\.Model,\s*Surface:\s*SurfaceMessages\}`, `Model: "", Surface: SurfaceMessages}`}},
+		wantFail: []string{"seam-parse"},
 	},
 	{
-		name: "hint-in-seq-order",
-		why:  "delivers the hint at its arrival position instead of holding it pending, so it lands before the tool results",
-		patches: []patch{{
-			file: "context.go",
-			old:  "c.PendingHints = append(c.PendingHints, entry)",
-			new:  "c.Dialogue = append(c.Dialogue, entry)",
-		}},
-		expect: []string{"hint"},
+		name:     "provenance-hardcoded",
+		why:      "gemini parser copy-pasted from the anthropic one and kept its provenance",
+		edits:    []edit{{"gemini.go", `from := Provenance\{Vendor: VendorGoogle, Model: resp\.ModelVersion, Surface: SurfaceGenerateContent\}`, `from := Provenance{Vendor: VendorAnthropic, Model: "claude-sonnet-5-fake", Surface: SurfaceMessages}`}},
+		wantFail: []string{"seam-parse"},
 	},
 	{
-		name: "hint-not-retained",
-		why:  "carries the hint once and then forgets it, treating a thing a human said as if it were ephemera",
-		patches: []patch{{
-			file: "context.go",
-			old:  "c.Dialogue = append(c.Dialogue, c.PendingHints...)\n\t\tc.PendingHints = nil",
-			new:  "c.PendingHints = nil",
-		}},
-		expect: []string{"hint"},
+		name:     "openai-usage-summed-naively",
+		why:      "treating OpenAI's prompt_tokens as if cached tokens were disjoint from it",
+		edits:    []edit{{"openai.go", `uncached := u\.PromptTokens - u\.Details\.CachedTokens - u\.Details\.CacheWriteTokens`, `uncached := u.PromptTokens`}},
+		wantFail: []string{"usage"},
 	},
 	{
-		name: "hint-resent-every-round",
-		why:  "never consumes the pending hint, so it is re-delivered on every subsequent request",
-		patches: []patch{{
-			file: "context.go",
-			old:  "c.PendingHints = nil\n\t\tc.Ephemera = nil",
-			new:  "c.Ephemera = nil",
-		}},
-		expect: []string{"hint"},
+		name:     "gemini-thoughts-assumed-included",
+		why:      "assuming thoughtsTokenCount is inside candidatesTokenCount; undercounts billed output",
+		edits:    []edit{{"gemini.go", `Output:\s*u\.CandidatesTokenCount \+ u\.ThoughtsTokenCount,`, `Output: u.CandidatesTokenCount,`}},
+		wantFail: []string{"usage"},
 	},
 	{
-		name: "hint-dropped-mid-turn",
-		why:  "receives the mid-turn message and throws it away, which is what a request builder does",
-		patches: []patch{{
-			file: "engine.go",
-			old:  "\t\te.record(Event{Type: EvMessageReceived, Actor: &You, Parts: TextParts(m.Text)})",
-			new:  "\t\tif before != InFlight && before != ToolsPending {\n\t\t\te.record(Event{Type: EvMessageReceived, Actor: &You, Parts: TextParts(m.Text)})\n\t\t}",
-		}},
-		expect: []string{"hint"},
+		name:     "anthropic-cache-read-ignored",
+		why:      "reading input_tokens alone on Anthropic, which undercounts on a warm cache",
+		edits:    []edit{{"anthropic.go", `CacheRead:\s*resp\.Usage\.CacheReadTokens,`, `CacheRead: 0,`}},
+		wantFail: []string{"usage"},
 	},
 	{
-		name: "ephemera-never-consumed",
-		why:  "leaves ephemera attached after the request that carried them, so volatile data becomes permanent",
-		patches: []patch{{
-			file: "context.go",
-			old:  "c.PendingHints = nil\n\t\tc.Ephemera = nil",
-			new:  "c.PendingHints = nil",
-		}},
-		expect: []string{"ephemera"},
-	},
-	{
-		name: "redaction-deletes-the-log-too",
-		why:  "removes the event from the audit record as well as from the context — amnesia, not redaction",
-		patches: []patch{{
-			file: "engine.go",
-			old:  "\t\te.record(Event{Type: EvRedacted, Actor: &You, TargetSeq: m.Seq})",
-			new: "\t\tfor i, ev := range e.log.Events {\n" +
-				"\t\t\tif ev.Seq == m.Seq {\n\t\t\t\te.log.Events = append(e.log.Events[:i], e.log.Events[i+1:]...)\n\t\t\t\tbreak\n\t\t\t}\n\t\t}\n" +
-				"\t\te.record(Event{Type: EvRedacted, Actor: &You, TargetSeq: m.Seq})",
-		}},
-		expect: []string{"redaction"},
-	},
-	{
-		name: "redaction-recorded-but-not-applied",
-		why:  "writes the Redacted event and never acts on it, so the payload stays in the context",
-		patches: []patch{{
-			file: "context.go",
-			old:  "c.Dialogue[i].Redacted = true",
-			new:  "_ = i",
-		}},
-		expect: []string{"redaction"},
-	},
-	{
-		name: "nondeterministic-render",
-		why:  "leaks the clock into the rendered request, the bug class that later destroys prefix caching",
-		patches: []patch{
-			{file: "render.go", old: "\t\"crypto/sha256\"", new: "\t\"time\"\n\t\"crypto/sha256\""},
-			{
-				file: "render.go",
-				old:  "req := wireRequest{Model: model, MaxTokens: maxTokens, Tools: toolSchema()}",
-				new:  "req := wireRequest{Model: model, MaxTokens: maxTokens, Tools: toolSchema()}\n\treq.System = \"rendered at \" + time.Now().Format(time.RFC3339Nano)",
-			},
+		name: "clock-in-the-renderer",
+		why:  "the first of the four ways non-determinism gets into a renderer",
+		edits: []edit{
+			{"anthropic.go", `MaxTokens: cfg\.MaxTokens,`, `MaxTokens: cfg.MaxTokens + mutantNonce(),`},
 		},
-		expect: []string{"replay"},
+		extra:    "package main\n\nimport \"time\"\n\n// The clock, reaching into a renderer. It must vary ACROSS PROCESSES:\n// `replay` compares two separate runs, so a per-process counter starts at the\n// same value both times and is not a mutation at all.\nfunc mutantNonce() int { return int(time.Now().UnixNano() % 997) }\n",
+		wantFail: []string{"replay"},
 	},
 	{
-		name: "interrupt-is-a-noop",
-		why:  "records the interrupt but does not make it a state, so the late tool call is executed",
-		patches: []patch{{
-			file: "context.go",
-			old:  "\t\tc.Turn = Interrupted\n\t\tc.PendingTools = nil",
-			new:  "\t\tbreak",
-		}},
-		expect: []string{"interrupt"},
+		name:     "anthropic-no-merge",
+		why:      "rendering each entry as its own message, so the tool result and the following instruction do not merge",
+		edits:    []edit{{"anthropic.go", `msgs\[n-1\]\.Role == role \{`, `msgs[n-1].Role == "\x00no-merge" {`}},
+		wantFail: []string{"seam-render"},
 	},
 	{
-		name: "junk-on-stdout",
-		why:  "prints a diagnostic to stdout, where the protocol lives",
-		patches: []patch{{
-			file: "engine.go",
-			old:  "\tgo e.readStdin()",
-			new:  "\tgo e.readStdin()\n\tfmt.Println(\"engine: starting up\")",
-		}},
-		expect: []string{"session", "ch1parity"},
+		name:     "ephemera-never-cleared",
+		why:      "forgetting that RequestSent consumes pending ephemera; a stale timestamp is a lie",
+		edits:    []edit{{"context.go", `c\.Ephemera = nil`, `_ = 0`}},
+		wantFail: []string{"ephemera"},
 	},
 	{
-		name: "reads-stdin-only-between-turns",
-		why:  "keeps the channel but refuses to look at it while a request is outstanding — the Chapter 1 shape, which cannot receive a hint at any price",
-		patches: []patch{{
-			file: "engine.go",
-			old:  "\t\tselect {\n\t\tcase m, ok := <-inbox:",
-			new: "\t\tinboxNow := inbox\n" +
-				"\t\tif e.ctx.Turn == InFlight || e.ctx.Turn == ToolsPending {\n\t\t\tinboxNow = nil\n\t\t}\n" +
-				"\t\tselect {\n\t\tcase m, ok := <-inboxNow:",
-		}},
-		expect: []string{"hint", "interrupt", "session"},
-		// Three checks, one root cause, and that is correct rather than a
-		// cascade bug. A program with no mailbox cannot receive the interrupt
-		// directive while blocked either, so the late tool call runs and the
-		// dead turn answers late. The prediction when this mutation was
-		// written was {hint} alone; the grader was right and the prediction
-		// was wrong. What matters is that the FIRST failure a student reads
-		// names the mailbox.
+		name:     "ephemera-classified-as-dialogue",
+		why:      "classifying at the capture site instead of in the reducer",
+		edits:    []edit{{"context.go", `if e\.Message\.Actor == ActorSystem \{`, `if false {`}},
+		wantFail: []string{"ephemera"},
 	},
 	{
-		name: "no-render-subcommand",
-		why:  "cannot expose log -> context -> request as a pure function, which means transport and context are entangled",
-		patches: []patch{{
-			file: "main.go",
-			old:  "case args[0] == \"render\":",
-			new:  "case args[0] == \"render\" && false:",
-		}},
-		expect: []string{"logdump", "replay"},
+		name:     "redaction-ignored",
+		why:      "a reducer that is total by ignoring an event it should have handled",
+		edits:    []edit{{"context.go", `c\.applyRedaction\(\*e\.Redact\)`, `_ = e.Redact`}},
+		wantFail: []string{"redaction"},
+	},
+	{
+		name:     "opaque-replayed-to-wrong-model",
+		why:      "handing a thinking signature to a vendor that never issued it",
+		edits:    []edit{{"gemini.go", `if op\.From\.SameModel\(target\) \{`, `if true {`}},
+		wantFail: []string{"seam-render"},
+	},
+	{
+		name:     "gemini-uses-messages-key",
+		why:      "renaming Anthropic's shape instead of learning Gemini's",
+		edits:    []edit{{"gemini.go", `json:"contents"`, `json:"messages"`}},
+		wantFail: []string{"seam-render"},
+	},
+	{
+		name: "openai-arguments-as-object",
+		why:  "sending tool arguments as an object, when OpenAI wants a JSON-encoded string",
+		edits: []edit{
+			{"openai.go", `Arguments string ` + "`" + `json:"arguments"` + "`", "Arguments json.RawMessage `json:\"arguments\"`"},
+			{"openai.go", `Arguments: string\(jsonObject\(call\.Args\)\),`, `Arguments: jsonObject(call.Args),`},
+		},
+		wantFail: []string{"seam-render"},
+	},
+	{
+		name:     "system-prompt-omitted",
+		why:      "the system prompt is renderer output; drop it and all three placements vanish",
+		edits:    []edit{{"main.go", `SystemPrompt: systemPrompt,`, `SystemPrompt: "",`}},
+		wantFail: []string{"seam-render"},
+	},
+	{
+		name:     "dump-prints-nothing",
+		why:      "a log that cannot be dumped cannot be replayed, and the parse check reads the dump",
+		edits:    []edit{{"main.go", `if err := log\.Write\(os\.Stdout\); err != nil \{`, `if _ = log; false {`}},
+		wantFail: []string{"logdump", "seam-parse"},
+	},
+	{
+		name:     "ch1-protocol-broken",
+		why:      "renaming the reply key; ch1parity catches the regression and session names the cause",
+		edits:    []edit{{"main.go", `emit\(out, map\[string\]string\{"assistant": reply\}\)`, `emit(out, map[string]string{"reply": reply})`}},
+		wantFail: []string{"ch1parity", "session"},
 	},
 }
 
-func TestCh2GraderDetectsMutations(t *testing.T) {
+func TestCh2ReferenceSolutionScores100(t *testing.T) {
+	bin := buildMutant(t, nil, "")
+	res, err := Ch2Run(bin)
+	if err != nil {
+		t.Fatalf("Ch2Run: %v", err)
+	}
+	checks := Ch2Evaluate(res)
+	total, max := 0, 0
+	for _, c := range checks {
+		total += c.Earned
+		max += c.Points
+		if !c.Passed {
+			t.Errorf("reference solution fails %q: %s", c.ID, strings.Join(c.Details, "; "))
+		}
+	}
+	if max != 100 {
+		t.Errorf("checks sum to %d points, want exactly 100", max)
+	}
+	if total != 100 {
+		t.Errorf("reference solution scored %d/100", total)
+	}
+}
+
+func TestCh2MutationsAreDetected(t *testing.T) {
 	if testing.Short() {
-		t.Skip("each mutation builds and grades a full submission")
+		t.Skip("mutation suite builds a binary per mutation")
 	}
 	for _, m := range mutations {
 		m := m
 		t.Run(m.name, func(t *testing.T) {
-			dir := mutantDir(t, m)
-			bin, cleanup, err := Build(dir)
-			if err != nil {
-				t.Fatalf("building mutant %q: %v", m.name, err)
-			}
-			defer cleanup()
-
+			t.Parallel()
+			bin := buildMutant(t, m.edits, m.extra)
 			res, err := Ch2Run(bin)
 			if err != nil {
-				t.Fatalf("grading mutant %q: %v", m.name, err)
+				t.Fatalf("Ch2Run: %v", err)
 			}
 			var failed []string
 			for _, c := range Ch2Evaluate(res) {
@@ -200,41 +185,30 @@ func TestCh2GraderDetectsMutations(t *testing.T) {
 				}
 			}
 			sort.Strings(failed)
-			want := append([]string(nil), m.expect...)
+			want := append([]string{}, m.wantFail...)
 			sort.Strings(want)
-
 			if strings.Join(failed, ",") != strings.Join(want, ",") {
-				t.Errorf("mutation %q (%s)\n  failing checks: [%s]\n  expected:       [%s]",
-					m.name, m.why, strings.Join(failed, ", "), strings.Join(want, ", "))
-				for _, c := range Ch2Evaluate(res) {
-					if !c.Passed {
-						t.Logf("  %s: %s", c.ID, strings.Join(c.Details, " | "))
-					}
-				}
+				t.Errorf("mutation %q (%s)\n  failed: %v\n  want:   %v\n"+
+					"When a mutation expectation misses, ask FIRST whether the grader is right.",
+					m.name, m.why, failed, want)
 			}
 		})
 	}
 }
 
-// mutantDir copies the reference solution into a scratch directory inside the
-// module and applies the mutation's patches.
-func mutantDir(t *testing.T, m mutation) string {
+// buildMutant copies the reference solution into a throwaway module, applies
+// the edits, and builds it. A throwaway module rather than a directory inside
+// this one: the go tool would otherwise try to build the mutants as part of
+// ./... and the copies would collide.
+func buildMutant(t *testing.T, edits []edit, extra string) string {
 	t.Helper()
-	src := filepath.Join("..", "..", "solutions", "ch02")
-	dst := filepath.Join("..", "..", "testdata", "mutants", m.name)
-	if err := os.RemoveAll(dst); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(dst, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { os.RemoveAll(dst) })
+	src := referenceDir(t)
+	dir := t.TempDir()
 
 	entries, err := os.ReadDir(src)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("read reference solution: %v", err)
 	}
-	contents := map[string]string{}
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") {
 			continue
@@ -243,23 +217,53 @@ func mutantDir(t *testing.T, m mutation) string {
 		if err != nil {
 			t.Fatal(err)
 		}
-		contents[e.Name()] = string(b)
-	}
-	for _, p := range m.patches {
-		body, ok := contents[p.file]
-		if !ok {
-			t.Fatalf("mutation %q patches %s, which is not part of the solution", m.name, p.file)
-		}
-		if n := strings.Count(body, p.old); n != 1 {
-			t.Fatalf("mutation %q: pattern appears %d times in %s (want exactly 1):\n%s",
-				m.name, n, p.file, p.old)
-		}
-		contents[p.file] = strings.Replace(body, p.old, p.new, 1)
-	}
-	for name, body := range contents {
-		if err := os.WriteFile(filepath.Join(dst, name), []byte(body), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, e.Name()), b, 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
-	return dst
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module mutant\n\ngo 1.21\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if extra != "" {
+		if err := os.WriteFile(filepath.Join(dir, "zz_mutant.go"), []byte(extra), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for _, ed := range edits {
+		path := filepath.Join(dir, ed.file)
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("mutation targets missing file %s: %v", ed.file, err)
+		}
+		re, err := regexp.Compile(ed.pattern)
+		if err != nil {
+			t.Fatalf("bad mutation pattern %q: %v", ed.pattern, err)
+		}
+		if !re.Match(b) {
+			// A mutation that does not apply is a test that silently passes.
+			t.Fatalf("mutation pattern %q did not match anything in %s", ed.pattern, ed.file)
+		}
+		out := re.ReplaceAll(b, []byte(ed.repl))
+		if err := os.WriteFile(path, out, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	bin := filepath.Join(dir, "ch02bin")
+	cmd := exec.Command("go", "build", "-o", bin, ".")
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("building mutant failed: %v\n%s", err, out)
+	}
+	return bin
+}
+
+func referenceDir(t *testing.T) string {
+	t.Helper()
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("cannot locate test file")
+	}
+	return filepath.Join(filepath.Dir(thisFile), "..", "..", "solutions", "ch02")
 }

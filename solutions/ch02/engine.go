@@ -1,403 +1,171 @@
 package main
 
-// The engine: an actor with a mailbox.
+// The engine: one turn, start to finish.
 //
-// This is the part Chapter 1 could not have written. There, the program read a
-// line, sent a request, waited, printed the answer, and read the next line —
-// and during the wait it was deaf. A hint is a message that arrives WHILE a
-// request is outstanding, so a program shaped like that cannot receive one at
-// any price.
-//
-// So: one goroutine owns the conversation and does nothing but select on two
-// channels. Stdin is read by a second goroutine that only ever posts to the
-// mailbox. The HTTP round trip happens on a third and posts its result back.
-// Nothing else touches the log or the context, which is why there is not a
-// single mutex in this file.
+// Notice how little of it there is, and that none of it mentions a vendor.
+// Everything vendor-shaped was pushed into the renderer and the parser, which
+// is the entire point of Chapter 2.
 
 import (
-	"bufio"
-	"encoding/json"
 	"fmt"
-	"os"
+	"io"
+	"net/http"
 	"strings"
+	"time"
 )
 
-// CodeCommit is stamped into every RequestSent. Set it at build time:
-//
-//	go build -ldflags "-X main.CodeCommit=$(git rev-parse HEAD)"
-var CodeCommit = "unknown"
-
-// MaxTokens is this exercise's fixed output budget.
-const MaxTokens = 1024
-
-type inKind string
-
-const (
-	inUser      inKind = "user"
-	inHint      inKind = "hint"
-	inInterrupt inKind = "interrupt"
-	inRedact    inKind = "redact"
-	inEphemera  inKind = "ephemera"
-	inDump      inKind = "dump"
-	inJunk      inKind = "junk"
-)
-
-type inMsg struct {
-	Kind        inKind
-	Text        string
-	Seq         int
-	Instruction string
-	Path        string
-	Raw         string
-}
-
-type respMsg struct {
-	Resp *APIResponse
-	Err  error
-}
-
-// Engine owns one conversation.
 type Engine struct {
-	log    *Log
-	ctx    *Context
-	client *Client
-
-	inbox chan inMsg
-	resp  chan respMsg
-
-	out  *bufio.Writer
-	repl bool
-
-	// owes records that a prompt is waiting for its answer. An interrupt
-	// cancels the debt: a killed turn produces no reply.
-	owes     bool
-	lastText string
+	Log  *Log
+	Ctx  *Context
+	Cfg  Config
+	HTTP *http.Client
+	Path string // where the log is persisted, so `dump` can find it
 }
 
-// NewEngine wires an engine to stdout.
-func NewEngine(repl bool) *Engine {
+func NewEngine(cfg Config, path string) *Engine {
 	return &Engine{
-		log:    NewLog(),
-		ctx:    NewContext(),
-		client: NewClient(),
-		inbox:  make(chan inMsg, 64),
-		resp:   make(chan respMsg, 4),
-		out:    bufio.NewWriter(os.Stdout),
-		repl:   repl,
+		Log:  NewLog(),
+		Ctx:  NewContext(),
+		Cfg:  cfg,
+		HTTP: &http.Client{Timeout: 120 * time.Second},
+		Path: path,
 	}
 }
 
-// record appends an event and folds it into the context. Those two things
-// always happen together and in that order, which is what makes the context
-// exactly "the state after playing the log".
-func (e *Engine) record(ev Event) Event {
-	ev = e.log.Append(ev)
-	e.ctx.Apply(ev)
-	return ev
+// record appends to the log and advances the context. One path in.
+func (e *Engine) record(ev Event) error {
+	stored := e.Log.Append(ev)
+	return e.Ctx.Apply(stored)
 }
 
-func (e *Engine) emit(v any) {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return
-	}
-	e.out.Write(b)
-	e.out.WriteByte('\n')
-	e.out.Flush()
+// Say records a human prompt.
+func (e *Engine) Say(text string) error {
+	return e.record(Event{Type: MessageReceived, Message: &MessageData{
+		Actor: ActorHuman, Parts: PartList{TextPart{Text: text}},
+	}})
 }
 
-func (e *Engine) say(format string, args ...any) {
-	if e.repl {
-		fmt.Fprintf(e.out, format+"\n", args...)
-		e.out.Flush()
-	}
-}
-
-func (e *Engine) ack() {
-	if e.repl {
-		return
-	}
-	e.emit(map[string]any{"ok": true})
-}
-
-// --- the mailbox ------------------------------------------------------------
-
-// readStdin is the only thing that touches stdin. It never blocks the engine:
-// whatever it reads goes into the mailbox and the engine picks it up whenever
-// it next reaches its select, including while a request is in flight.
-func (e *Engine) readStdin() {
-	defer close(e.inbox)
-	sc := bufio.NewScanner(os.Stdin)
-	sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
-	for sc.Scan() {
-		line := strings.TrimSpace(sc.Text())
-		if line == "" {
-			continue
-		}
-		if e.repl {
-			e.inbox <- inMsg{Kind: inUser, Text: line}
-			continue
-		}
-		e.inbox <- parseDirective(line)
-	}
-}
-
-// parseDirective turns one grader line into a mailbox message. The Chapter 1
-// protocol is the {"user": ...} case; everything else is new this chapter.
-func parseDirective(line string) inMsg {
-	var m map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(line), &m); err != nil {
-		return inMsg{Kind: inJunk, Raw: line}
-	}
-	if raw, ok := m["user"]; ok {
-		var s string
-		_ = json.Unmarshal(raw, &s)
-		return inMsg{Kind: inUser, Text: s}
-	}
-	if raw, ok := m["hint"]; ok {
-		var s string
-		_ = json.Unmarshal(raw, &s)
-		return inMsg{Kind: inHint, Text: s}
-	}
-	if _, ok := m["interrupt"]; ok {
-		return inMsg{Kind: inInterrupt}
-	}
-	if raw, ok := m["redact"]; ok {
-		var n int
-		_ = json.Unmarshal(raw, &n)
-		return inMsg{Kind: inRedact, Seq: n}
-	}
-	if raw, ok := m["ephemera"]; ok {
-		var eph struct {
-			Instruction string `json:"instruction"`
-			Text        string `json:"text"`
-		}
-		_ = json.Unmarshal(raw, &eph)
-		return inMsg{Kind: inEphemera, Instruction: eph.Instruction, Text: eph.Text}
-	}
-	if raw, ok := m["dump"]; ok {
-		var s string
-		_ = json.Unmarshal(raw, &s)
-		return inMsg{Kind: inDump, Path: s}
-	}
-	return inMsg{Kind: inJunk, Raw: line}
-}
-
-// --- the loop ---------------------------------------------------------------
-
-// Run is the engine's whole life: select, fold, decide. It exits when stdin has
-// closed and no turn is still open.
-func (e *Engine) Run() {
-	go e.readStdin()
-
-	inbox := e.inbox
-	for {
-		if inbox == nil && e.ctx.Turn == Idle {
-			break
-		}
-		select {
-		case m, ok := <-inbox:
-			if !ok {
-				inbox = nil
-				continue
-			}
-			e.handleInput(m)
-		case r := <-e.resp:
-			e.handleResponse(r)
-		}
-	}
-
-	if !e.repl {
-		e.emit(map[string]any{"usage": map[string]int{
-			"input": e.ctx.Usage.Input, "output": e.ctx.Usage.Output,
-		}})
-	}
-}
-
-func (e *Engine) handleInput(m inMsg) {
-	switch m.Kind {
-
-	case inUser, inHint:
-		// The same event either way. Whether it is a prompt or a hint is not
-		// decided here — it is decided by the reducer, from the turn state it
-		// arrives in. Classifying at capture time is wrong every time the
-		// human types fast.
-		before := e.ctx.Turn
-		e.record(Event{Type: EvMessageReceived, Actor: &You, Parts: TextParts(m.Text)})
-		switch before {
-		case InFlight, ToolsPending:
-			e.say("  (hint delivered mid-turn)")
-			e.ack()
-		default:
-			if m.Kind == inHint {
-				e.ack()
-			}
-			e.owes = !e.repl
-			e.sendRequest()
-		}
-
-	case inInterrupt:
-		e.record(Event{Type: EvInterrupted, Actor: &You})
-		e.owes = false
-		e.say("  (interrupted)")
-		e.ack()
-
-	case inRedact:
-		e.record(Event{Type: EvRedacted, Actor: &You, TargetSeq: m.Seq})
-		e.ack()
-
-	case inEphemera:
-		e.record(Event{
-			Type: EvEphemeraSet, Actor: &Actor{Kind: ActorSystem, ID: "engine"},
-			Instruction: m.Instruction, Parts: TextParts(m.Text),
-		})
-		e.ack()
-
-	case inDump:
-		data, err := e.log.Dump()
-		if err == nil {
-			err = os.WriteFile(m.Path, data, 0o644)
-		}
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "dump: %v\n", err)
-		}
-		e.ack()
-
-	default:
-		fmt.Fprintf(os.Stderr, "ignoring unrecognized line: %s\n", m.Raw)
-		e.ack()
-	}
-}
-
-// sendRequest renders the current context and puts it on the wire.
+// Attach records volatile data — the time, the screen, live status.
 //
-// Order matters and is load-bearing: RENDER FIRST, then record RequestSent.
-// The render is what carries a pending hint and the pending ephemera; the
-// RequestSent event is what consumes them. Do it the other way round and the
-// hint is delivered a round late, which is exactly the bug this chapter is
-// about.
-func (e *Engine) sendRequest() {
-	req := Render(e.ctx, e.client.Model, MaxTokens)
-	body, err := Marshal(req)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "render: %v\n", err)
-		return
-	}
-	e.record(Event{
-		Type: EvRequestSent, Actor: &Actor{Kind: ActorSystem, ID: "engine"},
-		CodeCommit: CodeCommit, RequestHash: HashRequest(body),
-	})
-	go func() {
-		resp, err := e.client.Send(body)
-		e.resp <- respMsg{Resp: resp, Err: err}
-	}()
+// It is an ordinary MessageReceived with Actor: System. The reducer is what
+// decides it is ephemeral rather than dialogue, which is the chapter's rule
+// about classification made concrete: the capture site does not know, and
+// cannot know, what an arriving message means.
+func (e *Engine) Attach(text string) error {
+	return e.record(Event{Type: MessageReceived, Message: &MessageData{
+		Actor: ActorSystem, Parts: PartList{TextPart{Text: text}},
+	}})
 }
 
-func (e *Engine) handleResponse(r respMsg) {
-	if r.Err != nil {
-		// Infrastructure failure: it changes state and contributes no content.
-		// The model never hears about a 429 that was cured by a retry.
-		e.record(Event{
-			Type: EvErrorOccurred, Actor: &Actor{Kind: ActorSystem, ID: "engine"},
-			Source: "Provider", Code: "request_failed", Message: r.Err.Error(),
-			RelatedSeq: e.log.next - 1,
-		})
-		fmt.Fprintf(os.Stderr, "provider error: %v\n", r.Err)
-		e.owes = false
-		e.ctx.Turn = Idle
-		return
+// Turn renders the current context, sends it, and folds the response back in.
+func (e *Engine) Turn() (string, error) {
+	renderer, parser, err := SeamFor(e.Cfg.Vendor)
+	if err != nil {
+		return "", err
 	}
 
-	var text strings.Builder
-	for _, b := range r.Resp.Content {
-		switch b.Type {
-		case "text":
-			text.WriteString(b.Text)
-		case "thinking", "redacted_thinking":
-			e.record(Event{
-				Type: EvAssistantThink, Actor: &Model,
-				Parts: TextParts(b.Thinking), Signature: b.Signature,
-			})
+	// RENDER BEFORE RECORDING RequestSent.
+	//
+	// Reverse these two lines and the bug is subtle and expensive: the reducer
+	// clears pending ephemera on RequestSent, so recording first means the
+	// renderer never sees them and the volatile data is silently never
+	// delivered. Nothing errors. The model just quietly does not know what
+	// time it is. Chapter 4 hits the identical ordering trap with hints.
+	req, err := renderer.Render(e.Ctx, e.Cfg)
+	if err != nil {
+		return "", err
+	}
+	if err := e.record(Event{Type: RequestSent, Request: &RequestData{To: Provenance{
+		Vendor: e.Cfg.Vendor, Model: e.Cfg.Model, Surface: e.Cfg.Surface,
+	}}}); err != nil {
+		return "", err
+	}
+
+	status, body, err := e.send(req)
+	if err != nil {
+		// A transport failure is infrastructure: it ends the turn.
+		_ = e.record(Event{Type: ErrorOccurred, Error: &ErrorData{Message: err.Error()}})
+		return "", err
+	}
+
+	events, err := parser.Parse(status, body)
+	if err != nil {
+		return "", err
+	}
+	for _, ev := range events {
+		if err := e.record(ev); err != nil {
+			return "", err
 		}
 	}
-	if text.Len() > 0 {
-		e.lastText = text.String()
-		e.record(Event{Type: EvAssistantMsg, Actor: &Model, Parts: TextParts(e.lastText)})
+	return e.lastAgentText(), nil
+}
+
+func (e *Engine) send(req *http.Request) (int, []byte, error) {
+	resp, err := e.HTTP.Do(req)
+	if err != nil {
+		return 0, nil, err
 	}
-	for _, b := range r.Resp.Content {
-		if b.Type != "tool_use" {
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return 0, nil, err
+	}
+	return resp.StatusCode, body, nil
+}
+
+// Ask is the loop of the chapter: say it, send everything, hand back the text.
+func (e *Engine) Ask(text string) (string, error) {
+	if err := e.Say(text); err != nil {
+		return "", err
+	}
+	reply, err := e.Turn()
+	if err != nil {
+		return "", err
+	}
+	if err := e.Save(); err != nil {
+		return "", err
+	}
+	return reply, nil
+}
+
+func (e *Engine) Save() error { return e.Log.SaveFile(e.Path) }
+
+func (e *Engine) lastAgentText() string {
+	for i := len(e.Ctx.Dialogue) - 1; i >= 0; i-- {
+		if e.Ctx.Dialogue[i].Actor != ActorAgent {
 			continue
 		}
-		args := b.Input
-		if len(args) == 0 {
-			args = json.RawMessage(`{}`)
-		}
-		e.record(Event{
-			Type: EvToolCalled, Actor: &Model,
-			CallID: b.ID, ToolName: b.Name, Args: args,
-		})
-	}
-
-	// Read the state BEFORE folding in ResponseEnded: that is what tells us
-	// whether this turn died while the response was in the air.
-	wasInterrupted := e.ctx.Turn == Interrupted
-
-	e.record(Event{
-		Type: EvResponseEnded, Actor: &Model, StopReason: r.Resp.StopReason,
-		Usage: &Usage{Input: r.Resp.Usage.InputTokens, Output: r.Resp.Usage.OutputTokens},
-	})
-
-	if wasInterrupted {
-		// The calls that arrived are in the log. None of them is in
-		// PendingTools, so none of them runs. The turn is over.
-		calls := 0
-		for _, b := range r.Resp.Content {
-			if b.Type == "tool_use" {
-				calls++
+		var b strings.Builder
+		for _, p := range e.Ctx.Dialogue[i].Parts {
+			if t, ok := p.(TextPart); ok {
+				b.WriteString(t.Text)
 			}
 		}
-		e.say("  (turn ended; %d tool call(s) recorded but not executed)", calls)
-		e.owes = false
-		return
+		return b.String()
 	}
-
-	if e.ctx.Turn == ToolsPending {
-		for _, id := range append([]string(nil), e.ctx.PendingTools...) {
-			e.record(Event{
-				Type: EvToolReturned, Actor: &Tool, CallID: id,
-				Parts: TextParts(e.agentStatus()),
-			})
-		}
-		e.sendRequest()
-		return
-	}
-
-	// end_turn.
-	if e.repl {
-		e.say("assistant: %s", e.lastText)
-	} else if e.owes {
-		e.emit(map[string]any{"assistant": e.lastText})
-		e.owes = false
-	}
+	return ""
 }
 
-// agentStatus is the chapter's one tool, and it is not a tool system: no
-// registry, no schema validation, no dispatch table. It reports the
-// conversation's own state, which makes it deliberately self-referential —
-// the agent's single capability is to look at the structure you just built.
-//
-// Its value must be a deterministic function of the log, because `render`
-// replays the log and the two must agree byte for byte.
-func (e *Engine) agentStatus() string {
-	highest := 0
-	for _, ev := range e.log.Events {
-		if ev.Seq > highest {
-			highest = ev.Seq
-		}
+// RenderOnly plays a log to a context and renders it, making no network call.
+// This is what makes replay, redaction, ephemera and the seam into byte
+// comparisons — and if your architecture cannot offer it cheaply, your context
+// is not actually separate from your transport.
+func RenderOnly(path string, cfg Config) ([]byte, error) {
+	log, err := LoadLogFile(path)
+	if err != nil {
+		return nil, err
 	}
-	b, _ := json.Marshal(map[string]any{
-		"highest_seq": highest,
-		"turn_state":  string(e.ctx.Turn),
-	})
-	return string(b)
+	ctx, err := log.Replay()
+	if err != nil {
+		return nil, err
+	}
+	renderer, _, err := SeamFor(cfg.Vendor)
+	if err != nil {
+		return nil, err
+	}
+	req, err := renderer.Render(ctx, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("render: %w", err)
+	}
+	return BodyOf(req)
 }

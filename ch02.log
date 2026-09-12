@@ -1,0 +1,21 @@
+{"log_version":1}
+{"seq":1,"type":"message_received","time":"2026-09-12T13:16:46.168598Z","message":{"actor":"human","parts":[{"type":"text","text":"Hello! I'm starting a new project. Give it a codename and remember it."}]}}
+{"seq":2,"type":"request_sent","time":"2026-09-12T13:16:46.168744Z","request":{"to":{"vendor":"anthropic","model":"claude-fake-course-1","surface":"messages"}}}
+{"seq":3,"type":"response_started","time":"2026-09-12T13:16:46.169547Z"}
+{"seq":4,"type":"response_ended","time":"2026-09-12T13:16:46.169547Z","response":{"parts":[{"type":"text","text":"Welcome aboard. Your project's codename is TANAGER-4417, and I'll remember it."}],"usage":{"input":25,"cache_write":0,"cache_read":0,"output":20},"from":{"vendor":"anthropic","model":"claude-fake-course-1","surface":"messages"}}}
+{"seq":5,"type":"message_received","time":"2026-09-12T13:16:46.169768Z","message":{"actor":"human","parts":[{"type":"text","text":"Good. What is the capital of France?"}]}}
+{"seq":6,"type":"request_sent","time":"2026-09-12T13:16:46.169779Z","request":{"to":{"vendor":"anthropic","model":"claude-fake-course-1","surface":"messages"}}}
+{"seq":7,"type":"response_started","time":"2026-09-12T13:16:46.169895Z"}
+{"seq":8,"type":"response_ended","time":"2026-09-12T13:16:46.169895Z","response":{"parts":[{"type":"text","text":"The capital of France is Paris."}],"usage":{"input":54,"cache_write":0,"cache_read":0,"output":8},"from":{"vendor":"anthropic","model":"claude-fake-course-1","surface":"messages"}}}
+{"seq":9,"type":"message_received","time":"2026-09-12T13:16:46.169998Z","message":{"actor":"human","parts":[{"type":"text","text":"And the fourth planet from the Sun?"}]}}
+{"seq":10,"type":"request_sent","time":"2026-09-12T13:16:46.170014Z","request":{"to":{"vendor":"anthropic","model":"claude-fake-course-1","surface":"messages"}}}
+{"seq":11,"type":"response_started","time":"2026-09-12T13:16:46.170138Z"}
+{"seq":12,"type":"response_ended","time":"2026-09-12T13:16:46.170138Z","response":{"parts":[{"type":"text","text":"Mars is the fourth planet from the Sun."}],"usage":{"input":71,"cache_write":0,"cache_read":0,"output":10},"from":{"vendor":"anthropic","model":"claude-fake-course-1","surface":"messages"}}}
+{"seq":13,"type":"message_received","time":"2026-09-12T13:16:46.170224Z","message":{"actor":"human","parts":[{"type":"text","text":"Now, what codename did you give my project?"}]}}
+{"seq":14,"type":"request_sent","time":"2026-09-12T13:16:46.170238Z","request":{"to":{"vendor":"anthropic","model":"claude-fake-course-1","surface":"messages"}}}
+{"seq":15,"type":"response_started","time":"2026-09-12T13:16:46.170362Z"}
+{"seq":16,"type":"response_ended","time":"2026-09-12T13:16:46.170362Z","response":{"parts":[{"type":"text","text":"The codename I gave your project is TANAGER-4417."}],"usage":{"input":92,"cache_write":0,"cache_read":0,"output":13},"from":{"vendor":"anthropic","model":"claude-fake-course-1","surface":"messages"}}}
+{"seq":17,"type":"message_received","time":"2026-09-12T13:16:46.170479Z","message":{"actor":"human","parts":[{"type":"text","text":"Thanks. Anything else I should know?"}]}}
+{"seq":18,"type":"request_sent","time":"2026-09-12T13:16:46.170494Z","request":{"to":{"vendor":"anthropic","model":"claude-fake-course-1","surface":"messages"}}}
+{"seq":19,"type":"response_started","time":"2026-09-12T13:16:46.170639Z"}
+{"seq":20,"type":"response_ended","time":"2026-09-12T13:16:46.170639Z","response":{"parts":[{"type":"text","text":"That is everything for now. Good luck with TANAGER-4417."}],"usage":{"input":114,"cache_write":0,"cache_read":0,"output":14},"from":{"vendor":"anthropic","model":"claude-fake-course-1","surface":"messages"}}}

@@ -1,566 +1,603 @@
 package grade
 
-// The Chapter 2 checks.
+// Chapter 2 checks. Sum = 100.
 //
-// Chapter 1 graded a wire format. Chapter 2 grades a reducer and a renderer,
-// so almost nothing carries over except the discipline: every failure names
-// the property that failed and says what to do about it.
+//	session      0   stdio protocol honoured; directives acked; request census
+//	ch1parity   25   all seven Chapter 1 checks still pass, unchanged
+//	logdump      5   log round-trips: dump -> render in a fresh process
+//	replay      10   two renders of one log are byte-identical
+//	redaction   10   a Redacted event names its target; content absent later
+//	ephemera    10   delivered exactly once, then absent
+//	usage       10   four token categories normalized from all three vendors
+//	seam-render 15   one log renders correctly to all three request shapes
+//	seam-parse  15   three responses -> contexts identical apart from provenance
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
-
-	"github.com/waywardgeek/coding-agents-course/internal/fakeanthropic"
 )
 
-// Ch2Evaluate turns Chapter 2 run evidence into the graded checklist.
-func Ch2Evaluate(res *Ch2Result) []Check {
+func Ch2Evaluate(r *Ch2Result) []Check {
 	return []Check{
-		checkSession(res),
-		checkCh1Parity(res),
-		checkLogDump(res),
-		checkReplay(res),
-		checkRedaction(res),
-		checkEphemera(res),
-		checkHint(res),
-		checkInterrupt(res),
-		checkCh2Usage(res),
+		ch2Session(r),
+		ch2Parity(r),
+		ch2LogDump(r),
+		ch2Replay(r),
+		ch2Redaction(r),
+		ch2Ephemera(r),
+		ch2UsageCheck(r),
+		ch2SeamRender(r),
+		ch2SeamParse(r),
 	}
 }
 
-// --- 0. the session itself --------------------------------------------------
-//
-// Worth zero points, and it can still sink a submission. The Chapter 2 session
-// adds directives and acknowledgements to Chapter 1's protocol, and if that
-// stream desynchronizes then every check downstream is measuring noise. This
-// check exists so the student sees the cause instead of five confusing
-// symptoms — and so does whoever is maintaining the grader.
+// ch2Session is worth zero and can still sink a submission. Without it, one
+// unacknowledged directive fails four checks at once and the student gets four
+// mysteries instead of one cause.
+func ch2Session(r *Ch2Result) Check {
+	c := Check{ID: "session", Title: "stdio protocol, directives, request census", Points: 0, Passed: true}
 
-func checkSession(res *Ch2Result) Check {
-	c := Check{ID: "session", Title: "The graded session ran to completion", Points: 0, Passed: true}
-	for _, p := range res.Protocol {
-		c.failf("%s", p)
-	}
-	for _, l := range res.Extra {
-		c.failf("unexpected stdout line: %q — stdout carries the protocol only", truncate(l, 160))
-	}
-	if res.ExitError != "" {
-		c.failf("program did not exit cleanly: %s (exit code %d)", res.ExitError, res.ExitCode)
-	}
-	var census []string
-	for _, r := range res.Records {
-		tag := r.Turn
-		if tag == "" {
-			tag = "(unscripted)"
+	census := []string{}
+	for _, v := range Ch2Vendors {
+		s := r.Session[v]
+		if s == nil {
+			c.failf("no session was recorded for %s", v)
+			continue
 		}
-		if r.Continuation {
-			tag += fmt.Sprintf("/cont%d", r.Iteration)
-		}
-		census = append(census, fmt.Sprintf("%d:%s", r.Seq, tag))
-	}
-	c.notef("%d requests — %s", len(res.Records), strings.Join(census, " "))
-	return c
-}
-
-// --- 1. the rewrite kept what it had ---------------------------------------
-
-func checkCh1Parity(res *Ch2Result) Check {
-	c := Check{ID: "ch1parity", Title: "Every Chapter 1 check still passes", Points: 25, Passed: true, Earned: 25}
-	var failed []string
-	for _, p := range res.Parity {
-		if !p.Passed {
-			failed = append(failed, p.ID)
-			c.failf("chapter 1 check %q now fails: %s", p.ID, strings.Join(p.Details, "; "))
-		}
-	}
-	if c.Passed {
-		c.notef("all %d Chapter 1 checks pass against the Chapter 2 binary — the rewrite bought properties, not features", len(res.Parity))
-	} else {
-		c.notef("failing Chapter 1 checks: %s. Run the Chapter 1 grader against this binary for the full diagnosis.",
-			strings.Join(failed, ", "))
-	}
-	return c
-}
-
-// --- 2. the log is a log ----------------------------------------------------
-
-func checkLogDump(res *Ch2Result) Check {
-	c := Check{ID: "logdump", Title: "The event log serializes and round-trips", Points: 5, Passed: true, Earned: 5}
-	if res.LogErr != "" {
-		c.failf("the dumped log could not be read as JSON-lines: %s", res.LogErr)
-	}
-	if !res.Acked["dump-early"] || !res.Acked["dump-final"] {
-		c.failf("a {\"dump\": \"<path>\"} directive was not acknowledged with {\"ok\": true}")
-	}
-	if len(res.FinalLog) == 0 {
-		c.failf("the final dump produced no events")
-		return c
-	}
-	prev := -1
-	for i, e := range res.FinalLog {
-		if !e.SeqOK {
-			c.failf("log line %d has no numeric %q field", i+1, "seq")
-			break
-		}
-		if e.Seq <= prev {
-			c.failf("log line %d has seq %d, which does not exceed the previous %d — Seq is monotonic and never reused",
-				i+1, e.Seq, prev)
-			break
-		}
-		if e.Norm == "" {
-			c.failf("log line %d has no %q field", i+1, "type")
-			break
-		}
-		prev = e.Seq
-	}
-	if res.RenderErr != "" {
-		c.failf("`render` could not replay the dumped log in a fresh process: %s", res.RenderErr)
-	}
-	if c.Passed {
-		c.notef("%d events, seq %d..%d, %s",
-			len(res.FinalLog), res.FinalLog[0].Seq, res.FinalLog[len(res.FinalLog)-1].Seq,
-			typeCensus(res.FinalLog))
-	}
-	return c
-}
-
-func typeCensus(log []LogEvent) string {
-	counts := map[string]int{}
-	var order []string
-	for _, e := range log {
-		if counts[e.Norm] == 0 {
-			order = append(order, e.Norm)
-		}
-		counts[e.Norm]++
-	}
-	var parts []string
-	for _, k := range order {
-		parts = append(parts, fmt.Sprintf("%s×%d", k, counts[k]))
-	}
-	return strings.Join(parts, " ")
-}
-
-// --- 3. replay is deterministic ---------------------------------------------
-
-func checkReplay(res *Ch2Result) Check {
-	c := Check{ID: "replay", Title: "Two renders of one log are byte-identical", Points: 15, Passed: true, Earned: 15}
-	if res.RenderErr != "" {
-		c.failf("%s", res.RenderErr)
-		return c
-	}
-	if res.RenderCalledNetwork {
-		c.failf("`render` called the API. It must be a pure function: log → context → request bytes, printed to stdout. " +
-			"If rendering needs the network, the context is not separable from the transport.")
-	}
-	if !bytes.Equal(res.RenderOut1, res.RenderOut2) {
-		c.failf("the two renders differ: %s", firstDiff(res.RenderOut1, res.RenderOut2))
-		c.notef("a log is a fixed input. Two runs of a pure function over a fixed input must agree. " +
-			"The usual culprits are a timestamp, a random id, or Go's randomized map iteration order " +
-			"leaking into the rendered JSON — the same bug class that destroys prefix caching later.")
-		return c
-	}
-	if _, err := parseRendered(res.RenderOut1); err != nil {
-		c.failf("`render` did not print a parseable Messages API request: %v", err)
-		return c
-	}
-	c.notef("two independent `render` invocations produced %d identical bytes, with no network access",
-		len(res.RenderOut1))
-	return c
-}
-
-func firstDiff(a, b []byte) string {
-	n := len(a)
-	if len(b) < n {
-		n = len(b)
-	}
-	for i := 0; i < n; i++ {
-		if a[i] != b[i] {
-			lo := i - 40
-			if lo < 0 {
-				lo = 0
-			}
-			hiA, hiB := i+40, i+40
-			if hiA > len(a) {
-				hiA = len(a)
-			}
-			if hiB > len(b) {
-				hiB = len(b)
-			}
-			return fmt.Sprintf("first difference at byte %d\n  run 1: …%s…\n  run 2: …%s…",
-				i, string(a[lo:hiA]), string(b[lo:hiB]))
-		}
-	}
-	return fmt.Sprintf("identical for %d bytes, then lengths differ (%d vs %d)", n, len(a), len(b))
-}
-
-// parseRendered decodes render's stdout as a Messages API request.
-func parseRendered(out []byte) (fakeanthropic.ToolRequest, error) {
-	var req fakeanthropic.ToolRequest
-	dec := json.NewDecoder(bytes.NewReader(out))
-	if err := dec.Decode(&req); err != nil {
-		return req, err
-	}
-	if len(req.Messages) == 0 {
-		return req, fmt.Errorf("the rendered request has no messages")
-	}
-	return req, nil
-}
-
-// --- 4. redaction: gone from one artifact, present in the other -------------
-
-func checkRedaction(res *Ch2Result) Check {
-	c := Check{ID: "redaction", Title: "Redacted content leaves the context and stays in the log", Points: 15, Passed: true, Earned: 15}
-	if !res.RedactFound {
-		c.failf("could not find %q in the early dump, so there was nothing to redact. "+
-			"The fake planted that string in its first assistant reply; it must appear in the event log.",
-			RedactCanary)
-		return c
-	}
-	if !res.Acked["redact"] {
-		c.failf("the {\"redact\": %d} directive was not acknowledged", res.RedactSeq)
-	}
-
-	// Gone from the context: the live request after the redaction...
-	after := requestsAfterTurn(res.Records, "post-redaction")
-	if len(after) == 0 {
-		c.failf("no request was sent after the redaction, so its effect could not be observed")
-	}
-	for _, r := range after {
-		if r.Count(RedactCanary) > 0 {
-			c.failf("request %d, sent after Redacted(seq=%d), still contains %q — "+
-				"redaction must remove the payload from what the model sees",
-				r.Seq, res.RedactSeq, RedactCanary)
-			break
-		}
-	}
-	// ...and from the replayed render, which proves the decision is an event
-	// and not a mutation someone forgot to record.
-	if len(res.RenderOut1) > 0 && bytes.Contains(res.RenderOut1, []byte(RedactCanary)) {
-		c.failf("`render` of the dumped log still emits %q. The Redacted event must be replayed, not just applied "+
-			"to the live context at the time it happened.", RedactCanary)
-	}
-
-	// Present in the log.
-	if ev, ok := FindPayload(res.FinalLog, RedactCanary); !ok {
-		c.failf("%q is gone from the dumped log too. Redaction edits the CONTEXT; the log is the audit record "+
-			"and must still show what was said. Deleting from both is not redaction, it is amnesia.", RedactCanary)
-	} else if ev.Seq != res.RedactSeq {
-		c.notef("note: the payload now lives at seq %d, not the seq %d that was redacted", ev.Seq, res.RedactSeq)
-	}
-
-	// The decision itself is an auditable event.
-	reds := FindEvents(res.FinalLog, "redacted")
-	switch {
-	case len(reds) == 0:
-		c.failf("the log contains no Redacted event. The decision to redact is itself a fact about the conversation, " +
-			"and replay cannot reproduce an effect that was never recorded.")
-	default:
-		found := false
-		for _, r := range reds {
-			if t, ok := intField(r.Fields, "target_seq", "targetseq", "target", "seq_target"); ok && t == res.RedactSeq {
-				found = true
-			}
-		}
-		if !found {
-			c.failf("no Redacted event names seq %d as its target (looked for a target_seq field)", res.RedactSeq)
-		}
-	}
-	if c.Passed {
-		c.notef("%q: absent from every request after Redacted(seq=%d) and from the replayed render, still present in the log. "+
-			"That pair of assertions is History != Context.", RedactCanary, res.RedactSeq)
-	}
-	return c
-}
-
-// --- 5. ephemera are delivered once and never remembered --------------------
-
-func checkEphemera(res *Ch2Result) Check {
-	c := Check{ID: "ephemera", Title: "Ephemeral data appears once and is never dialogue", Points: 10, Passed: true, Earned: 10}
-	if !res.Acked["set-ephemera"] {
-		c.failf("the {\"ephemera\": ...} directive was not acknowledged")
-	}
-	var carrying []int
-	total := 0
-	for _, r := range res.Records {
-		if n := r.Count(EphemeraCanary); n > 0 {
-			carrying = append(carrying, r.Seq)
-			total += n
-		}
-	}
-	switch {
-	case len(carrying) == 0:
-		c.failf("%q never reached the model. Ephemera are attached to the next request; if they are never rendered, "+
-			"the EphemeraSet event did nothing.", EphemeraCanary)
-	case len(carrying) > 1:
-		c.failf("%q appears in %d requests (%v). Ephemera are delivered once and then consumed — "+
-			"that is what makes them safe to hold volatile data. A stale timestamp resent forever is a lie.",
-			EphemeraCanary, len(carrying), carrying)
-	case total > 1:
-		c.failf("%q appears %d times inside request %d; it should be carried exactly once",
-			EphemeraCanary, total, carrying[0])
-	}
-
-	for _, e := range res.FinalLog {
-		if e.Has(EphemeraCanary) && dialogueTypes[e.Norm] {
-			c.failf("the %s event at seq %d contains %q. Ephemera are not something anyone said: "+
-				"they belong in an EphemeraSet event, never in the dialogue.", e.Type, e.Seq, EphemeraCanary)
-			break
-		}
-	}
-	if len(res.RenderOut1) > 0 && bytes.Contains(res.RenderOut1, []byte(EphemeraCanary)) {
-		c.failf("the replayed render still carries %q. The ephemera were consumed by a RequestSent during the session; "+
-			"replaying the log must consume them again, leaving none pending at the end.", EphemeraCanary)
-	}
-	if c.Passed {
-		c.notef("%q: carried in exactly one request (#%d), absent from the dialogue and from the replay",
-			EphemeraCanary, carrying[0])
-	}
-	return c
-}
-
-// --- 6. the hint: five separable properties ---------------------------------
-
-func checkHint(res *Ch2Result) Check {
-	c := Check{ID: "hint", Title: "A mid-turn message is received, classified, positioned, delivered once, and kept", Points: 15, Passed: true, Earned: 15}
-
-	if !res.HintGateFired {
-		c.failf("the fake never reached the point where it holds its reply open — " +
-			"the agent_status loop did not run, so there was no turn to steer")
-		return c
-	}
-
-	// (a) received while blocked.
-	if !res.HintAcked {
-		c.failf("PROPERTY 'received while blocked': the hint was written to stdin while your program was waiting on an "+
-			"HTTP response it had already sent, and no {\"ok\": true} came back within %s. A program that reads stdin "+
-			"only between rounds cannot even receive this line. An actor has a mailbox (§2.5): read stdin on its own "+
-			"goroutine and deliver into a channel.", GateWindow)
-	} else {
-		c.notef("received while blocked: acknowledged %s into a request that was still unanswered",
-			res.HintAckLatency.Round(time.Microsecond))
-	}
-
-	if res.Capped["hint-loop"] {
-		c.failf("PROPERTY 'delivered': the fake called agent_status until it hit its iteration cap and never saw %q "+
-			"come back. The loop only ends when the steer arrives — a hint that is dropped, or saved for the next "+
-			"round, leaves the agent running.", HintText)
-		return c
-	}
-
-	first := firstRequestContaining(res.Records, HintText)
-	if first == nil {
-		c.failf("PROPERTY 'delivered': %q never appeared in any request", HintText)
-		return c
-	}
-
-	// (b) classified as a hint, not a prompt.
-	if !first.Continuation {
-		c.failf("PROPERTY 'classified': %q first arrived in request %d, which carries no tool_result blocks — "+
-			"it started a turn of its own. The identical bytes are a prompt when the turn is Idle and a hint when it "+
-			"is InFlight; only the reducer knows which, because only the reducer holds the state.", HintText, first.Seq)
-	}
-	if res.Answers["hint-loop"] == "" {
-		c.failf("PROPERTY 'classified': the hinted turn never produced its {\"assistant\": ...} line. " +
-			"A hint steers a turn; it does not end one and it does not earn a reply of its own.")
-	}
-
-	// (c) positioned after the tool results.
-	hintIdx, lastResult := -1, -1
-	for i, b := range first.Blocks {
-		if strings.Contains(b.Text, HintText) && b.Type != "tool_result" && hintIdx < 0 {
-			hintIdx = i
-		}
-		if b.Type == "tool_result" {
-			lastResult = i
-		}
-	}
-	switch {
-	case hintIdx < 0 && strings.Contains(first.Body.SystemText(), HintText):
-		c.notef("positioned: carried in the request's system field — the first-class mid-turn path. " +
-			"The ordering rule is specific to the hack and does not apply here.")
-	case hintIdx < 0:
-		c.failf("PROPERTY 'positioned': %q is in request %d somewhere the grader cannot locate as a content block",
-			HintText, first.Seq)
-	case lastResult >= 0 && hintIdx < lastResult:
-		c.failf("PROPERTY 'positioned': the hint is block %d and the last tool_result is block %d — the hint comes "+
-			"BEFORE the results it is meant to redirect, so the model reads it as a comment on nothing. "+
-			"In the hack, the text block goes after the tool_result blocks, always.", hintIdx, lastResult)
-	default:
-		c.notef("positioned: block %d, after the last tool_result at block %d", hintIdx, lastResult)
-	}
-
-	// (d) delivered once.
-	for _, r := range res.Records {
-		if n := r.Count(HintText); n > 1 {
-			c.failf("PROPERTY 'delivered once': request %d carries %q %d times. It is one thing the human said once; "+
-				"re-attaching it to every round is the ephemera mistake applied to the wrong kind of event.",
-				r.Seq, HintText, n)
-			break
-		}
-	}
-
-	// (e) retained.
-	last := lastRequestOfTurn(res.Records, "after-interrupt")
-	if last == nil {
-		c.notef("note: could not locate a late request in which to check retention")
-	} else if last.Count(HintText) == 0 {
-		c.failf("PROPERTY 'retained': %q is gone from request %d, several turns later. Unlike ephemera, a hint really "+
-			"was said: permanent in the log, permanent in the dialogue. Delivered once; remembered always.",
-			HintText, last.Seq)
-	} else {
-		c.notef("retained: still present %d requests later", last.Seq-first.Seq)
-	}
-
-	// And it must be in the log as a message, not as some special thing.
-	found := false
-	for _, e := range res.FinalLog {
-		if e.Has(HintText) && e.Norm == "messagereceived" {
-			found = true
-			break
-		}
-	}
-	if !found {
-		c.failf("PROPERTY 'retained': no MessageReceived event in the log contains %q. A hint is not a new kind of "+
-			"event — it is the same event as a prompt, distinguished only by the state it arrived in.", HintText)
-	}
-	return c
-}
-
-// --- 7. interrupt: recorded, not executed -----------------------------------
-
-func checkInterrupt(res *Ch2Result) Check {
-	c := Check{ID: "interrupt", Title: "An interrupted turn records tool calls without executing them", Points: 10, Passed: true, Earned: 10}
-	if !res.IntGateFired {
-		c.failf("the fake never reached the interrupt gate — the second agent_status loop did not run")
-		return c
-	}
-	if !res.IntAcked {
-		c.failf("the {\"interrupt\": true} directive was written while your program was blocked on an HTTP request "+
-			"and was not acknowledged within %s", GateWindow)
-	}
-
-	// Executed-after-interrupt shows up as the loop continuing.
-	var maxIter int
-	for _, r := range res.Records {
-		if r.Turn == "interrupt-loop" && r.Iteration > maxIter {
-			maxIter = r.Iteration
-		}
-	}
-	if maxIter > 2 {
-		c.failf("after the interrupt, your program answered the tool call anyway: the fake saw %d continuations of the "+
-			"interrupt-loop turn. A tool call that arrives on an Interrupted turn is RECORDED and NOT EXECUTED — "+
-			"truth without action. That is only expressible if Interrupted is a state, not a boolean someone remembers "+
-			"to check.", maxIter)
-	}
-
-	// The log must show the call, though.
-	ints := FindEvents(res.FinalLog, "interrupted")
-	if len(ints) == 0 {
-		c.failf("the log contains no Interrupted event")
-	} else {
-		lastInt := ints[len(ints)-1]
-		var calledAfter, returnedAfter int
-		for _, e := range res.FinalLog {
-			if e.Seq <= lastInt.Seq {
+		census = append(census, fmt.Sprintf("%s:%d requests, %d answers", v, len(s.Requests), len(s.Answers)))
+		for _, p := range s.Protocol {
+			if strings.HasPrefix(p, "ack:") {
 				continue
 			}
-			switch e.Norm {
-			case "toolcalled":
-				calledAfter++
-			case "toolreturned":
-				returnedAfter++
-			}
+			c.failf("%s: %s", v, p)
 		}
-		if calledAfter == 0 {
-			c.failf("no ToolCalled event follows the Interrupted event at seq %d. The model's already-issued call still "+
-				"arrived; the log is the record of what happened, so it belongs there even though nothing ran.", lastInt.Seq)
-		}
-		if returnedAfter > 0 {
-			c.failf("%d ToolReturned event(s) follow the Interrupted event at seq %d — something executed",
-				returnedAfter, lastInt.Seq)
+		for _, e := range s.Extra {
+			c.failf("%s: unrecognized stdout line %.60q", v, e)
 		}
 	}
-
-	// The next request must be legal despite the dangling call, and the next
-	// message must be a prompt.
-	next := lastRequestOfTurn(res.Records, "after-interrupt")
-	if next == nil {
-		c.failf("no request was sent for the prompt that followed the interrupt — the next message after a dead turn " +
-			"is a prompt, not a hint, and it starts a new turn")
-	} else {
-		for _, v := range next.Violations {
-			c.failf("request %d (the first after the interrupt) is not legal Anthropic JSON: %s", next.Seq, v)
+	if e := r.Ephemera; e != nil {
+		census = append(census, fmt.Sprintf("ephemera:%d requests", len(e.Requests)))
+		acked := false
+		for _, p := range e.Protocol {
+			if p == "ack:ephemeral" {
+				acked = true
+			}
 		}
-		if want := Ch2ExpectedAnswer("after-interrupt"); strings.TrimSpace(res.Answers["after-interrupt"]) != want {
-			c.failf("the prompt after the interrupt answered %q, expected %q",
-				truncate(res.Answers["after-interrupt"], 80), truncate(want, 80))
+		if !acked {
+			c.failf("the {\"ephemeral\":...} directive was never acknowledged with {\"ack\":\"ephemeral\"}")
+		}
+	}
+	c.Details = append(c.Details, "census: "+strings.Join(census, "; "))
+	return c
+}
+
+func ch2Parity(r *Ch2Result) Check {
+	c := Check{ID: "ch1parity", Title: "all seven Chapter 1 checks still pass", Points: 25, Passed: true, Earned: 25}
+	if r.Ch1Err != "" {
+		c.failf("Chapter 1 harness could not run: %s", r.Ch1Err)
+		return c
+	}
+	if len(r.Ch1) == 0 {
+		c.failf("Chapter 1 harness produced no checks")
+		return c
+	}
+	for _, sub := range r.Ch1 {
+		if !sub.Passed {
+			c.failf("Chapter 1 check %q now fails: %s", sub.ID, strings.Join(sub.Details, "; "))
 		}
 	}
 	if c.Passed {
-		c.notef("interrupt acknowledged mid-request; the post-interrupt tool call was recorded and never executed; " +
-			"the next request rendered legally despite a dangling tool_use")
-		if res.AnswerAfterInt {
-			c.notef("note: the killed turn still emitted an {\"assistant\": ...} line. That is allowed — " +
-				"a partial answer is a defensible design — but it is not required.")
-		}
+		c.Details = append(c.Details, fmt.Sprintf("%d Chapter 1 checks still pass", len(r.Ch1)))
 	}
 	return c
 }
 
-// --- 8. usage ---------------------------------------------------------------
-
-func checkCh2Usage(res *Ch2Result) Check {
-	c := Check{ID: "usage", Title: "Cumulative usage, derived from ResponseEnded events", Points: 5, Passed: true, Earned: 5}
-	if !res.UsageSeen {
-		c.failf("no {\"usage\": {\"input\": .., \"output\": ..}} line after stdin closed")
+func ch2LogDump(r *Ch2Result) Check {
+	c := Check{ID: "logdump", Title: "log round-trips: dump -> render in a fresh process", Points: 5, Passed: true, Earned: 5}
+	s := r.Session["anthropic"]
+	if s == nil {
+		c.failf("no anthropic session")
 		return c
 	}
-	want := res.FakeUsage
-	if res.UsageIn != want.InputTokens || res.UsageOut != want.OutputTokens {
-		c.failf("reported input=%d output=%d, but the server's totals for this session are input=%d output=%d. "+
-			"Every response ends in a ResponseEnded event carrying usage; summing the log is the whole job.",
-			res.UsageIn, res.UsageOut, want.InputTokens, want.OutputTokens)
+	if strings.TrimSpace(s.DumpOut) == "" {
+		c.failf("`ch02 dump` produced nothing on stdout (stderr: %.200s)", s.DumpErr)
 		return c
 	}
-	ended := len(FindEvents(res.FinalLog, "responseended"))
-	if ended == 0 {
-		c.failf("the log contains no ResponseEnded events, so the totals cannot have come from the log")
+	if s.LogErr != "" {
+		c.failf("dumped log is not valid JSON-lines: %s", s.LogErr)
 		return c
 	}
-	c.notef("input=%d output=%d across %d ResponseEnded events", res.UsageIn, res.UsageOut, ended)
+	if len(s.Log) == 0 {
+		c.failf("dumped log contained no events")
+		return c
+	}
+	// Seq must be present and ascending: ordering is primary.
+	prev := -1
+	for _, l := range s.Log {
+		if l.Seq <= prev {
+			c.failf("dumped log is not in ascending seq order (saw %d after %d)", l.Seq, prev)
+			break
+		}
+		prev = l.Seq
+	}
+	if strings.TrimSpace(r.RoundTripOut) == "" {
+		c.failf("rendering the dumped log in a fresh process produced nothing (stderr: %.200s)", r.RoundTripErr)
+	}
+	if c.Passed {
+		c.Details = append(c.Details, fmt.Sprintf("%d events dumped and re-rendered", len(s.Log)))
+	}
 	return c
 }
 
-// --- helpers ----------------------------------------------------------------
-
-func firstRequestContaining(recs []fakeanthropic.ToolRecord, needle string) *fakeanthropic.ToolRecord {
-	for i := range recs {
-		if recs[i].Count(needle) > 0 {
-			return &recs[i]
+func ch2Replay(r *Ch2Result) Check {
+	c := Check{ID: "replay", Title: "two renders of one log are byte-identical", Points: 10, Passed: true, Earned: 10}
+	for _, v := range Ch2Vendors {
+		a, b := r.Render[v], r.RenderTwice[v]
+		if strings.TrimSpace(a) == "" {
+			c.failf("%s: `render` produced nothing (stderr: %.200s)", v, r.RenderErr[v])
+			continue
+		}
+		if a != b {
+			c.failf("%s: two renders of the same log differ. Look for the clock, a random id, "+
+				"Go's randomized map iteration order, or iteration over a set.", v)
 		}
 	}
-	return nil
+	if c.Passed {
+		c.Details = append(c.Details, "all three vendors render deterministically")
+	}
+	return c
 }
 
-func requestsAfterTurn(recs []fakeanthropic.ToolRecord, turn string) []fakeanthropic.ToolRecord {
-	var out []fakeanthropic.ToolRecord
-	for i := range recs {
-		if recs[i].Turn == turn {
-			out = append(out, recs[i:]...)
-			return out
+func ch2Redaction(r *Ch2Result) Check {
+	c := Check{ID: "redaction", Title: "redacted content is absent from later renders", Points: 10, Passed: true, Earned: 10}
+	for _, v := range Ch2Vendors {
+		plain, red := r.Render[v], r.Redacted[v]
+		if strings.TrimSpace(red) == "" {
+			c.failf("%s: rendering the redacted log produced nothing (stderr: %.200s)", v, r.RedactedErr[v])
+			continue
+		}
+		// Negative control: without the Redacted event the secret MUST be
+		// present. Otherwise a submission that simply never renders tool
+		// results would pass this check for the wrong reason.
+		if !strings.Contains(plain, RedactedSecret) {
+			c.failf("%s: the un-redacted render does not contain the tool output at all, "+
+				"so this check cannot show that redaction did anything", v)
+			continue
+		}
+		if strings.Contains(red, RedactedSecret) {
+			c.failf("%s: redacted tool output (%q) still appears in the rendered request", v, RedactedSecret)
+		}
+		// The CALL must survive. RedactResult stubs the result and keeps the
+		// call, so the model can still see what it asked for and why.
+		if !strings.Contains(red, "read_file") {
+			c.failf("%s: the tool CALL disappeared too. RedactResult stubs the result and keeps the call.", v)
 		}
 	}
-	return nil
+	if c.Passed {
+		c.Details = append(c.Details, "tool output stubbed, tool call preserved, on all three vendors")
+	}
+	return c
 }
 
-func lastRequestOfTurn(recs []fakeanthropic.ToolRecord, turn string) *fakeanthropic.ToolRecord {
-	for i := len(recs) - 1; i >= 0; i-- {
-		if recs[i].Turn == turn {
-			return &recs[i]
+func ch2Ephemera(r *Ch2Result) Check {
+	c := Check{ID: "ephemera", Title: "delivered exactly once, then absent", Points: 10, Passed: true, Earned: 10}
+	e := r.Ephemera
+	if e == nil {
+		c.failf("no ephemera session was recorded")
+		return c
+	}
+	const marker = "CURRENT_TIME=2026-09-12T00:00:00Z"
+	if len(e.Requests) < 2 {
+		c.failf("expected at least 2 requests in the ephemera session, saw %d", len(e.Requests))
+		return c
+	}
+	var carrying []int
+	for i, req := range e.Requests {
+		if strings.Contains(string(req.Body), marker) {
+			carrying = append(carrying, i+1)
 		}
 	}
-	return nil
+	switch len(carrying) {
+	case 0:
+		c.failf("the ephemeral part was never delivered in any request")
+	case 1:
+		if carrying[0] != 1 {
+			c.failf("the ephemeral part was delivered in request %d; it should ride the FIRST request after it arrives", carrying[0])
+		}
+	default:
+		c.failf("the ephemeral part was delivered in %d requests (%v); it must be delivered exactly once. "+
+			"A stale timestamp is not stale data, it is a lie.", len(carrying), carrying)
+	}
+	if c.Passed {
+		c.Details = append(c.Details, fmt.Sprintf("delivered once, in request %d of %d", carrying[0], len(e.Requests)))
+	}
+	return c
+}
+
+// ch2UsageCheck is the silent bug made loud. Nothing crashes, no test fails,
+// the number is simply not the number — so it is graded directly.
+func ch2UsageCheck(r *Ch2Result) Check {
+	c := Check{ID: "usage", Title: "four token categories, normalized, disjoint", Points: 10, Passed: true, Earned: 10}
+
+	// Main session: round 1 {100,0,50,30} + round 2 {12,0,200,8}.
+	// Anthropic reports this DISJOINT, OpenAI and Gemini as a SUBSET of their
+	// prompt totals. A parser that sums naively gets 362 input on two of the
+	// three vendors instead of 112.
+	want := Ch2Usage{Input: 112, CacheWrite: 0, CacheRead: 250, Output: 38}
+	for _, v := range Ch2Vendors {
+		s := r.Session[v]
+		if s == nil {
+			c.failf("no session for %s", v)
+			continue
+		}
+		if s.Usage == nil {
+			c.failf("%s: no usage line was printed at end of session", v)
+			continue
+		}
+		if *s.Usage != want {
+			c.failf("%s: usage %+v, want %+v. Cached tokens are a SUBSET of the prompt total on "+
+				"OpenAI and Gemini, and DISJOINT from it on Anthropic; and Gemini reports thinking "+
+				"tokens separately from candidate tokens.", v, *s.Usage, want)
+		}
+	}
+
+	// Cache-write probe: only Anthropic and OpenAI report a cache-write token
+	// count at all. Gemini reports none anywhere in usageMetadata, so the
+	// honest canonical answer for Gemini is zero — the asymmetry is real and
+	// must not be papered over with an invented number.
+	for _, v := range Ch2Vendors {
+		s := r.UsageProbe[v]
+		if s == nil || s.Usage == nil {
+			c.failf("%s: no usage line from the cache-write probe", v)
+			continue
+		}
+		w := Ch2Usage{Input: 7, CacheWrite: 300, CacheRead: 0, Output: 11}
+		if v == "gemini" {
+			w = Ch2Usage{Input: 7, CacheWrite: 0, CacheRead: 0, Output: 11}
+		}
+		if *s.Usage != w {
+			c.failf("%s cache-write probe: usage %+v, want %+v", v, *s.Usage, w)
+		}
+	}
+	if c.Passed {
+		c.Details = append(c.Details, "input/cache_write/cache_read/output normalized on all three vendors")
+	}
+	return c
+}
+
+// --- seam-render -----------------------------------------------------------
+
+func ch2SeamRender(r *Ch2Result) Check {
+	c := Check{ID: "seam-render", Title: "one log, three vendor request shapes", Points: 15, Passed: true, Earned: 15}
+
+	// Vendor field names are graded EXACTLY. `tool_use_id` is Anthropic's
+	// spelling, not the student's, and misspelling it is a real bug rather
+	// than a naming preference. Only the student's OWN names are normalized.
+	checkAnthropicRequest(&c, r.Render["anthropic"])
+	checkOpenAIRequest(&c, r.Render["openai"])
+	checkGeminiRequest(&c, r.Render["gemini"])
+	if c.Passed {
+		c.Details = append(c.Details, "Exhibit A (three authorships) and Exhibit B (the merged message) both correct")
+	}
+	return c
+}
+
+func decode(c *Check, vendor, body string) map[string]any {
+	if strings.TrimSpace(body) == "" {
+		c.failf("%s: `render` produced nothing on stdout", vendor)
+		return nil
+	}
+	var m map[string]any
+	if err := json.Unmarshal([]byte(body), &m); err != nil {
+		c.failf("%s: `render` did not print a single JSON object (%v). stdout must carry the "+
+			"request body and nothing else.", vendor, err)
+		return nil
+	}
+	return m
+}
+
+func checkAnthropicRequest(c *Check, body string) {
+	m := decode(c, "anthropic", body)
+	if m == nil {
+		return
+	}
+	if _, ok := m["system"]; !ok {
+		c.failf("anthropic: no top-level `system` parameter. Anthropic takes the system prompt " +
+			"as a request parameter, not as a message.")
+	}
+	msgs, _ := m["messages"].([]any)
+	if len(msgs) == 0 {
+		c.failf("anthropic: no `messages` array")
+		return
+	}
+	var toolUseID, resultID string
+	sawMergedText := false
+	for _, raw := range msgs {
+		msg, _ := raw.(map[string]any)
+		role, _ := msg["role"].(string)
+		blocks, _ := msg["content"].([]any)
+		seenResult := false
+		for _, b := range blocks {
+			blk, _ := b.(map[string]any)
+			switch blk["type"] {
+			case "tool_use":
+				if role != "assistant" {
+					c.failf("anthropic: a tool_use block appeared in a %q message; it belongs to the assistant", role)
+				}
+				toolUseID, _ = blk["id"].(string)
+			case "tool_result":
+				// EXHIBIT A: Anthropic says the HUMAN said it. That is false,
+				// and it is the tidiest available lie under this format.
+				if role != "user" {
+					c.failf("anthropic: tool_result must be carried in a \"user\" message, not %q", role)
+				}
+				if _, ok := blk["tool_use_id"]; !ok {
+					c.failf("anthropic: tool_result block has no `tool_use_id`")
+				}
+				resultID, _ = blk["tool_use_id"].(string)
+				seenResult = true
+			case "text":
+				// EXHIBIT B: the human's next instruction merged into the same
+				// user message. Required because a tool_result must immediately
+				// follow its tool_use, and because tool_result blocks must come
+				// FIRST in the content array — text before a tool_result is a 400.
+				if role == "user" && seenResult {
+					sawMergedText = true
+				}
+				if role == "user" && !seenResult {
+					for _, b2 := range blocks {
+						blk2, _ := b2.(map[string]any)
+						if blk2["type"] == "tool_result" {
+							c.failf("anthropic: a text block precedes a tool_result in the same user " +
+								"message. tool_result blocks must come FIRST; text after them.")
+							break
+						}
+					}
+				}
+			}
+		}
+	}
+	if toolUseID == "" {
+		c.failf("anthropic: no tool_use block found for the supplied tool call")
+	}
+	if resultID == "" {
+		c.failf("anthropic: no tool_result block found for the supplied tool result")
+	}
+	if toolUseID != "" && resultID != "" && toolUseID != resultID {
+		c.failf("anthropic: tool_use id %q and tool_result tool_use_id %q do not match", toolUseID, resultID)
+	}
+	if !sawMergedText {
+		c.failf("anthropic: the tool result and the human's following instruction were not merged " +
+			"into one user message with the result first")
+	}
+	// Opaque replay material was issued by this exact model, so it must be
+	// handed back.
+	if !strings.Contains(body, "sig-exhibit-1") {
+		c.failf("anthropic: the thinking block issued by this same model was not replayed. " +
+			"Opaque material is carried, never interpreted, and handed back to the model that issued it.")
+	}
+}
+
+func checkOpenAIRequest(c *Check, body string) {
+	m := decode(c, "openai", body)
+	if m == nil {
+		return
+	}
+	msgs, _ := m["messages"].([]any)
+	if len(msgs) == 0 {
+		c.failf("openai: no `messages` array")
+		return
+	}
+	sawSystem, sawToolRole := false, false
+	var callID, resultID string
+	for _, raw := range msgs {
+		msg, _ := raw.(map[string]any)
+		role, _ := msg["role"].(string)
+		switch role {
+		case "system", "developer":
+			sawSystem = true
+		case "tool":
+			// EXHIBIT A: OpenAI invents a role for it.
+			sawToolRole = true
+			if _, ok := msg["tool_call_id"]; !ok {
+				c.failf("openai: a tool message has no `tool_call_id`")
+			}
+			resultID, _ = msg["tool_call_id"].(string)
+		case "assistant":
+			if tcs, ok := msg["tool_calls"].([]any); ok && len(tcs) > 0 {
+				tc, _ := tcs[0].(map[string]any)
+				callID, _ = tc["id"].(string)
+				fn, _ := tc["function"].(map[string]any)
+				if fn == nil {
+					c.failf("openai: tool_calls entry has no `function` object")
+					break
+				}
+				// arguments is a JSON-ENCODED STRING here, not an object.
+				if _, isString := fn["arguments"].(string); !isString {
+					c.failf("openai: tool_calls[0].function.arguments must be a JSON-encoded STRING, " +
+						"not an object. This is the vendor's encoding decision, and it is why the " +
+						"context stores the decoded object instead.")
+				}
+			}
+		}
+	}
+	if !sawSystem {
+		c.failf("openai: no system (or developer) message. OpenAI takes the system prompt as a " +
+			"message inside the array — the same fact Anthropic puts in a parameter.")
+	}
+	if !sawToolRole {
+		c.failf("openai: no message with role \"tool\" for the supplied tool result")
+	}
+	if callID != "" && resultID != "" && callID != resultID {
+		c.failf("openai: tool_calls id %q and tool_call_id %q do not match", callID, resultID)
+	}
+	if callID == "" {
+		c.failf("openai: the assistant's tool call was not rendered")
+	}
+	if strings.Contains(body, "sig-exhibit-1") {
+		c.failf("openai: replay material issued by an Anthropic model was sent to OpenAI. " +
+			"Opaque material goes back only to the exact model that issued it.")
+	}
+}
+
+func checkGeminiRequest(c *Check, body string) {
+	m := decode(c, "gemini", body)
+	if m == nil {
+		return
+	}
+	if _, ok := m["systemInstruction"]; !ok {
+		c.failf("gemini: no top-level `systemInstruction`. Gemini hoists the system prompt clean " +
+			"out of the message list — one fact, a third placement.")
+	}
+	if _, ok := m["messages"]; ok {
+		c.failf("gemini: the request has a `messages` array. Gemini calls it `contents`.")
+	}
+	contents, _ := m["contents"].([]any)
+	if len(contents) == 0 {
+		c.failf("gemini: no `contents` array")
+		return
+	}
+	sawModelRole, sawCall, sawResponse := false, false, false
+	for _, raw := range contents {
+		turn, _ := raw.(map[string]any)
+		role, _ := turn["role"].(string)
+		if role == "assistant" {
+			c.failf("gemini: role \"assistant\" is not a Gemini role; the assistant is called \"model\"")
+		}
+		if role == "model" {
+			sawModelRole = true
+		}
+		parts, _ := turn["parts"].([]any)
+		if parts == nil {
+			c.failf("gemini: a turn has no `parts` array")
+		}
+		for _, p := range parts {
+			part, _ := p.(map[string]any)
+			if fc, ok := part["functionCall"].(map[string]any); ok {
+				sawCall = true
+				if _, isObj := fc["args"].(map[string]any); !isObj {
+					c.failf("gemini: functionCall.args must be a JSON object, not a string")
+				}
+			}
+			if fr, ok := part["functionResponse"].(map[string]any); ok {
+				// EXHIBIT A: Gemini splits the difference — a functionResponse
+				// part inside a user turn.
+				sawResponse = true
+				if role != "user" {
+					c.failf("gemini: functionResponse appeared in a %q turn; it belongs in a user turn", role)
+				}
+				if name, _ := fr["name"].(string); name == "" {
+					c.failf("gemini: functionResponse.name is required and is empty. The context " +
+						"stores only the call id, so the renderer must resolve the name from the " +
+						"matching tool call.")
+				}
+				if _, isObj := fr["response"].(map[string]any); !isObj {
+					c.failf("gemini: functionResponse.response must be a JSON OBJECT. A bare string " +
+						"is a 400 — a scalar every other vendor accepts has to be wrapped here.")
+				}
+			}
+		}
+	}
+	if !sawModelRole {
+		c.failf("gemini: no turn with role \"model\"")
+	}
+	if !sawCall {
+		c.failf("gemini: the assistant's tool call was not rendered as a functionCall part")
+	}
+	if !sawResponse {
+		c.failf("gemini: the tool result was not rendered as a functionResponse part")
+	}
+	if strings.Contains(body, "sig-exhibit-1") {
+		c.failf("gemini: replay material issued by an Anthropic model was sent to Google")
+	}
+}
+
+// --- seam-parse ------------------------------------------------------------
+
+func ch2SeamParse(r *Ch2Result) Check {
+	c := Check{ID: "seam-parse", Title: "three responses, one context, provenance preserved", Points: 15, Passed: true, Earned: 15}
+
+	proj := map[string][]string{}
+	for _, v := range Ch2Vendors {
+		s := r.Session[v]
+		if s == nil || len(s.Log) == 0 {
+			c.failf("%s: no dumped log to compare", v)
+			return c
+		}
+		proj[v] = SaidProjection(s.Log)
+	}
+	base := proj["anthropic"]
+	for _, v := range Ch2Vendors[1:] {
+		if !equalStrings(base, proj[v]) {
+			c.failf("%s: the parsed context differs from anthropic's beyond provenance.\n  anthropic: %v\n  %s: %v\n"+
+				"  Everything the model SAID must normalize; only the record of who said it survives.",
+				v, base, v, proj[v])
+		}
+	}
+
+	// Provenance must be PRESERVED, not normalized away. A submission whose
+	// three contexts are fully identical has thrown it away, and will be
+	// unable to render a valid Gemini request after a tool call.
+	seen := map[string]string{}
+	for _, v := range Ch2Vendors {
+		vendor, model, surface := provenanceOf(r.Session[v].Log)
+		if vendor == "" || model == "" {
+			c.failf("%s: response events carry no provenance (vendor=%q model=%q). Provenance is "+
+				"recorded at write time and can never be reconstructed later.", v, vendor, model)
+			continue
+		}
+		if surface == "" {
+			c.failf("%s: provenance has no surface. Signature validity is scoped to "+
+				"(vendor, model, surface), not to vendor.", v)
+		}
+		key := vendor + "/" + model
+		if prev, dup := seen[key]; dup {
+			c.failf("%s: provenance %q is identical to %s's. The three contexts must differ here "+
+				"and nowhere else.", v, key, prev)
+		}
+		seen[key] = v
+	}
+	if c.Passed {
+		c.Details = append(c.Details, fmt.Sprintf("three vendors, one context; provenance distinct: %v", keysOf(seen)))
+	}
+	return c
+}
+
+func provenanceOf(lines []Ch2LogLine) (vendor, model, surface string) {
+	for _, l := range lines {
+		if l.Type != normName("response_ended") {
+			continue
+		}
+		resp := getMap(l.Data, "response")
+		if resp == nil {
+			continue
+		}
+		from := getMap(resp, "from", "provenance")
+		if from == nil {
+			continue
+		}
+		return getStr(from, "vendor"), getStr(from, "model"), getStr(from, "surface")
+	}
+	return "", "", ""
+}
+
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func keysOf(m map[string]string) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
 }
