@@ -484,3 +484,41 @@ URLs and live-probe results, is in `book/ch02-wire-verification.md`.
    the ruled check list by existing. It has already paid for itself once here
    (the `ch1-protocol-broken` mutation fails `ch1parity` *and* `session`, and
    `session` is what names the cause). Confirm it stays.
+
+### Two decisions I made silently, found by auditing this list
+
+Both were baked into the code and the grader and written down nowhere you would
+look. Adding them here because a decision whose only mental model lives in the
+person who made it is exactly the liability this book argues against — and
+both of these are inherited by Chapter 3, under write-once, whether or not
+anyone ratifies them.
+
+7. **Which event carries the assistant's tool-call content?** §2.3 lists both
+   `ResponseEnded` and `ToolCalled` and never says. Two coherent readings
+   exist and they are not compatible:
+
+   - *(what I built)* `ResponseEnded.Parts` carries everything the assistant
+     produced, `ToolCallPart`s included, in their natural order alongside text.
+     `ToolCalled` is then an **engine** event recording that a call was
+     *dispatched* — it adds no dialogue content, and exists so Chapter 3 can
+     time a call and Chapter 4 can cancel one.
+   - *(the alternative)* the parser emits a `ToolCalled` event per call and
+     `ResponseEnded` carries only text. This loses the ordering of text
+     relative to calls within one turn, which is why I did not choose it.
+
+   The turn table then reads "`InFlight × ResponseEnded (tool calls)`" as
+   *inspect the response's parts*, which is what the reference solution does.
+   **This is load-bearing for Chapter 3** and should be stated in §2.3 rather
+   than left to the implementer.
+
+8. **Where does the log format version live?** §2.7 requires the log to carry a
+   semantic version; §2.8 says "JSON-lines, one event per line". Those are in
+   mild tension, because a version is not an event. I emit a first line
+   `{"log_version":1}` and made the reader **lenient**: a log without a header
+   is assumed current, and the grader ignores the line entirely, so a student
+   who omits it is not penalised. Strictness is reserved for what must be
+   interpreted — an unknown *event type* is still a loud refusal.
+
+   That split (lenient about a field we control, strict about anything we must
+   interpret) seems right to me, but it is a rule the chapter does not state
+   and the reader cannot guess.
