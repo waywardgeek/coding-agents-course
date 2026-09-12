@@ -100,6 +100,28 @@ scope changed: **the rewrite is observably identical for everything Chapter 1
 could already do.** It then gains something Chapter 1 could not express at any
 price — the same conversation, correctly, to three different vendors.
 
+### The contract, stated once
+
+This is the last time you will be asked to throw code away.
+
+Chapter 1 was sacrificial on purpose: you had to feel a wrong data structure
+fail before a right one could mean anything. **From here on, every chapter is
+additive.** New events, new tools, new seams — but nothing in this chapter gets
+deleted in the next one, or the one after that.
+
+That is a promise with a practical consequence, and it is the reason to state
+it rather than let the reader infer it: **build the simplest thing that
+satisfies this chapter.** Do not leave room for the tool loop. Do not
+generalize for concurrency. Do not invent a plugin system for skills. Those are
+all coming, and the chapters are sequenced so that each arrives *before* the
+weight that would have made it painful — which is precisely the lesson §2.0
+just paid 30,000 lines to learn.
+
+A reader who does not trust this promise will over-engineer defensively, and
+defensive over-engineering is the failure mode this book argues against
+everywhere else. So: trust it. If a later chapter makes you delete something
+from this one, that is our bug, not yours.
+
 ---
 
 ## §2.1 History ≠ Context
@@ -355,7 +377,7 @@ type Redaction uint8
 const (
     RedactResult   Redaction = iota + 1 // tool result content -> stub; the call survives
     RedactTool                          // call and result both go; visible reasoning survives
-    RedactDialogue                      // prose and reasoning go; the goal stack never does
+    RedactDialogue                      // prose and reasoning go; survivors are defined by the compaction policy
     RedactSummary                       // the span is replaced by compressed prose
 )
 ```
@@ -1022,33 +1044,32 @@ and three ways in and out of it.**
    against fakes — they make this exercise affordable and they catch the bugs
    that matter here — it is an argument for knowing what a green grader does
    and does not prove.
-4. **Is `ch1parity` at 25 still right** when the seam is worth 35? It is a
-   quarter of the grade for "you didn't break what you had." Defensible, but
-   worth a ruling now rather than after the grader is built.
-5. **Should Chapter 2 state the three-chapter roadmap** (tools → actors →
-   seam-for-capabilities) so the reader knows hints are coming and does not
-   design for them prematurely? Leaning yes, briefly — write-once means readers
-   will reasonably ask "should I leave room for X?", and the honest answer is
-   "no, we sequenced it so you don't have to."
-
-6. **Does the goal stack belong in Chapter 2's `Context`?** The compaction
-   gradient names it as the thing that survives *every* level of redaction —
-   "the conversation and visible reasoning go, but never the stack of goals."
-   That makes it a first-class context member, and it satisfies the
-   no-unbounded-growth rule (bounded by nesting depth, not by time). But
-   Chapter 2 has no concept of goals and cannot motivate one, so introducing it
-   here would be the speculative abstraction this chapter otherwise argues
-   against. Leaning: name it in the forward-looking table, add the field in the
-   context-engineering chapter. Adding a *new* field later is additive;
-   reshaping an existing one is not — so the cost of deferring is low.
-7. **Where does the context-engineering chapter go?** It depends on tool
-   results existing (Ch3) and on the system prompt existing (Ch6 skills),
+4. ~~**Is `ch1parity` at 25 still right?**~~ **RULED (2026-09-12): yes, 25
+   stays.** A quarter of the grade for "you did not break what you already
+   had" is defensible even with the seam at 35, and it honours the standing
+   guard from Chapter 1's review.
+5. ~~**Should Chapter 2 state the roadmap?**~~ **RULED (2026-09-12): yes —
+   as a contract, not a table of contents.** See §2.0, "The contract, stated
+   once." The valuable part is not the list of coming chapters, which may be
+   reordered; it is the promise that nothing here gets deleted later, and the
+   instruction that follows from it: build the simplest thing that satisfies
+   this chapter. A reader who distrusts the promise over-engineers
+   defensively, which is the failure mode the book argues against everywhere
+   else.
+6. ~~**Does the goal stack belong in Chapter 2's `Context`?**~~ **RULED
+   (2026-09-12): no goal stack.** It arrives with context engineering, which
+   is also where the policy that needs it is defined. Deferral is cheap here
+   for a structural reason worth remembering: adding a *new* field later is
+   additive, while reshaping an existing one is not — which is exactly why
+   `RedactData` had to be fixed now and this does not. The `RedactDialogue`
+   comment no longer forward-references it.
+7. **Where does the context-engineering chapter go? — TBD.** It depends on
+   tool results existing (Ch3) and on the system prompt existing (Ch6 skills),
    because one of its central claims is that memory belongs in the message
    history rather than the system prompt. That puts it at Ch7 or later. Its
    *hook* — the `Redacted` event — is established here, so placement is
    genuinely flexible and need not be settled now. Ideas captured in
    `book/chapter-context-engineering-notes.md`.
-
 8. **Is `usage` still worth only 5 points?** It was priced when it meant
    "record two numbers." It now means normalizing four categories across three
    vendors that disagree about whether their own categories overlap — a silent,

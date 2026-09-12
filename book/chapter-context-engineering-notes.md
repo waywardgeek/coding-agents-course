@@ -123,11 +123,16 @@ These are settled and the chapter inherits them:
    the design's own logic it may not: if purging *all* tool calls is the better
    compaction, an opt-out for individual results is solving a problem the purge
    does not have. Bill's live design decision, not recorded as settled.
-3. **Does the goal stack become a `Context` field, and when?** It survives every
-   level of redaction, so it is first-class. It satisfies the
-   no-unbounded-growth rule (bounded by nesting depth, not by time). Chapter 2
-   open question 6 leans toward adding it here rather than there, because adding
-   a *new* field later is additive while reshaping an existing one is not.
+3. **Does the goal stack become a `Context` field, and when?** **RULED
+   2026-09-12: not in Chapter 2 — it belongs to THIS chapter.** It survives
+   every level of redaction, so it is first-class, and it satisfies the
+   no-unbounded-growth rule (bounded by nesting depth, not by time). But
+   Chapter 2 has no concept of goals and cannot motivate one. Deferral is cheap
+   for a structural reason: adding a *new* field later is additive, while
+   reshaping an existing one is not — which is why `RedactData` had to be fixed
+   in Chapter 2 and this did not. **This chapter must define both the field and
+   the policy that needs it**, since `RedactDialogue` no longer names its
+   survivors and now defers to "whatever the compaction policy designates."
 4. **How do the compression ratios get chosen?** 8× and 64× are the shipped
    cascade's numbers; the chapter should say whether they are principled or
    empirical.
