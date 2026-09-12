@@ -202,10 +202,15 @@ the author, not a line of the chapter.)*
 
 The awkward truth, taught straight because it is part of the landscape:
 
-- **You cannot cheaply get a key that goes fast enough.** Writing code with
-  an agent needs sustained token throughput, and the big providers gate that
-  behind expensive tiers — Anthropic (last checked) wants ~$400 and a couple
-  of weeks of account aging before you can burn tokens at coding speed.
+- **You cannot cheaply get a key that goes fast enough — eventually.**
+  Writing code with an agent needs sustained token throughput, and the big
+  providers gate that behind expensive tiers: Anthropic (last checked) wants
+  ~$400 and a couple of weeks of account aging before you can burn tokens at
+  coding speed. Be precise about when this bites. It does **not** bite in
+  this course, whose exercises spend almost nothing (see the cost note
+  below). It bites the day you point a finished agent at real work. The
+  friction the course actually removes is *having a provider account at
+  all*, not the throughput ceiling.
 - **Why: the economics of the tool layer.** Every major model advance is
   followed within months by cheap distilled competitors, so raw model access
   is a melting asset. The providers' response is to own the high-value tools
@@ -221,20 +226,34 @@ The awkward truth, taught straight because it is part of the landscape:
   API key, you don't need us**: the entire course runs identically pointed
   straight at the provider. The proxy exists to remove the toll booth, not
   to become one.
-- **The honest cost warning (state it early and plainly):** the course
-  author takes no profit on proxied tokens — but tokens cost what they cost,
-  direct or proxied. Expect the course's toy agent to burn **$1,000, maybe
-  more**, by the end. Building a *real* AI coding agent — the thing this
-  book prepares you to do — will run you on the order of **$10K in tokens**.
-  That is the real tuition, it goes to the providers, and no route around it
-  exists. Budget accordingly before starting.
+- **The honest cost warning — three meters, and everyone confuses them.**
+  The course author takes no profit on proxied tokens; tokens cost what they
+  cost, direct or proxied. But three very different numbers get fused into
+  one scary figure, and they differ by two orders of magnitude. State them
+  separately and early:
 
-  To be clear about what is *not* costly: **every graded exercise in this
-  book runs against a local fake server.** Grading needs no API key, reaches
-  no network, and costs **$0** — as many times as you like. Only the optional
-  live smoke tests spend real money, and those cost pennies. You can complete
-  and pass every exercise in this chapter without spending anything. The
-  tuition above is what it costs to *build the real thing* afterwards.
+  1. **Reading the book: $0.** The architecture, the war stories, and the
+     rulings are the substance. An experienced engineer who never runs a
+     single exercise still gets most of the value. That is a legitimate way
+     to read this book, not a consolation prize.
+  2. **Doing the graded exercises: $0, plus $20–$100 if you want.** Every
+     graded exercise runs against a local fake server: no API key, no
+     network, **$0**, as many times as you like. Only the optional live
+     smoke tests spend real money, and they are small — budget **$20–$100
+     for the entire book**, not per chapter. The real cost here is not
+     money, it is that the exercises are *sized for an engineer working
+     with a coding assistant*. Chapter 2's reference solution is about
+     1,600 lines. Hand-typed that is a semester project; directed, it is a
+     week. You can still do it by hand. It will just take the semester.
+  3. **Building the real thing afterwards: $1,000–$10,000.** This is the
+     number people mean when they say building an agent is expensive, and
+     it is almost never your program's own token burn. It is what you will
+     pay **Claude Code or Codex** to help you write it — the assistant
+     spend it takes an AI-accelerated engineer to produce a coding agent
+     good enough to replace Claude Code or Codex. That is the real tuition,
+     it goes to the providers, and no route around it exists. It is also
+     entirely optional and it begins *after* the last chapter. Nothing in
+     this course asks you to spend it.
 - **The happy accident:** the Chapter 1 program already targets
   `ANTHROPIC_BASE_URL` because the auto-grader's fake server needs it. The
   proxy is the same seam: fake server for grading, course proxy for live

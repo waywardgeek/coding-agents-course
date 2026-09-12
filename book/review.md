@@ -279,6 +279,13 @@ mentioning it.
 
 ## R10. §1.7 should say grading is free
 
+**STATUS: APPLIED 2026-09-12 — and superseded in scope.** The "grading costs
+$0" fact is now in §1.7. While applying it, Bill corrected a factual error the
+original bullet contained (see D5): the $1,000–$10,000 figures were
+misattributed to the course's own token burn. §1.7 now states **three
+separate meters** instead of one fused figure. The anchor text quoted below no
+longer exists.
+
 **Anchor** — §1.7, the honest cost warning bullet ("$1,000, maybe more" /
 "$10K in tokens").
 
@@ -329,8 +336,25 @@ minimalism grounds. See R11 — name the consequence, don't fix it.
 or system-prompt assembly.** The outline's existing "out of scope, by design"
 list is correct and complete.
 
-**D5. Do not soften the cost warning.** R10 adds a true fact beside it; it does
-not dilute it. "$1,000, maybe more" and "$10K" stay.
+**D5. Do not soften the cost warning — and do not re-fuse it.** R10 adds a
+true fact beside it; it does not dilute it. The $1,000–$10,000 figure **stays**.
+
+**Amended 2026-09-12 by Bill.** The original bullet was factually wrong about
+*whose* meter those dollars are on, and the error is easy to reintroduce
+because the fused version sounds scarier and therefore more honest. It isn't.
+§1.7 now states three meters and they must remain separate:
+
+- reading the book — **$0**;
+- the graded exercises — **$0** against the fake server, plus **$20–$100 for
+  the whole book** if you run the optional live tests;
+- building your own agent afterwards — **$1,000–$10,000**, which is
+  **Claude Code / Codex assistant spend**, not the agent's own token burn,
+  and which begins after the last chapter.
+
+So: do not delete the big numbers (they are the honest tuition for building
+the real thing), do not attach them to the course or to the toy agent, and do
+not collapse the three meters back into one. The course is cheap; the thing
+you build afterwards is not.
 
 ---
 
