@@ -123,11 +123,12 @@ I work at Google. Nothing in this book represents Google's position on anything,
 and no part of it draws on information that isn't publicly verifiable — every
 vendor claim here can be reproduced by anyone with an account and an afternoon.
 
-I am also harder on Google's API in these pages than on anyone else's. Two
-reasons, and neither is that it is the worst. It is the one I use most, so I have
-hit more of its edges. And I have raised the same complaints internally, through
-the normal channels, which is where an employee should raise them first. Where I
-say something is badly designed, I mean it, and I have said it in both places.
+I am also harder on Google's API in these pages than on anyone else's. Partly
+that is exposure: it is the one I use most, so I have hit more of its edges.
+Partly it is that I have already raised these same complaints internally,
+through the normal channels, and I would rather say in public exactly what I
+have said in private. Where I call something badly designed, I mean it, and I
+have said so in both places.
 
 I have tried to be fair everywhere and flattering nowhere. If you catch me
 calling something crap that is actually beautiful, or the reverse, the repository
