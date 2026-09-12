@@ -343,9 +343,21 @@ const (
 )
 
 type RedactData struct {
-    Target Seq    // the event superseded. Never mutate the original.
-    Reason string
+    From, To    Seq        // the SPAN superseded, inclusive. Not one event.
+    Level       Redaction  // what, within that span, is removed
+    Replacement []Part     // RedactSummary only; purges synthesize their stubs
+    Reason      string
 }
+
+// Redaction levels, weakest first. Ch2 exercises only RedactResult; the rest
+// arrive with context engineering. Span says WHERE, level says WHAT.
+type Redaction uint8
+const (
+    RedactResult   Redaction = iota + 1 // tool result content -> stub; the call survives
+    RedactTool                          // call and result both go; visible reasoning survives
+    RedactDialogue                      // prose and reasoning go; the goal stack never does
+    RedactSummary                       // the span is replaced by compressed prose
+)
 ```
 
 ### Content
@@ -513,6 +525,61 @@ because compaction replaces entries with a summary entry. That is the
 distinction to hold: `Dialogue` grows and has a plan; the map grew and had
 none.
 
+### Redaction is a family, not a flag
+
+The shape above — a **span**, a **level**, and an optional replacement — looks
+like over-modelling for a chapter that only ever stubs a tool result. It is
+here because the alternative is demolishing it later, and because the thing it
+grows into is the mechanism that keeps an agent alive past its context window.
+
+The naive design is `Target Seq` plus a boolean: this event was redacted. It
+cannot express "remove every tool call and result older than the last
+`save_memory`," which is the single most valuable compaction there is.
+
+**Compaction by position versus compaction by category.** The common framework
+approach — Google's ADK does this — is to replace the oldest *portion* of
+history with an LLM-written summary. That is compaction by **position**: it
+discards whatever happens to be old, valuable or not, and what it loses is
+unpredictable, because a summary is lossy in ways nobody enumerated.
+
+Compaction by **category** discards a *kind* of content wherever it appears.
+And the categories are wildly unequal: in real coding sessions, tool results
+and tool-call arguments together are the clear majority of a conversation's
+tokens, while carrying almost none of its continuity. The agent's reasoning,
+its decisions, its sense of what it is doing — those are cheap and they are the
+part you cannot regenerate.
+
+Which yields the rule:
+
+> **Know what you are throwing away.** Purge categories first, summarize last.
+> A category purge is lossy in a way you can name and have measured. A summary
+> is lossy in a way you will discover later, in production, as a personality
+> change.
+
+Hence the levels, weakest first: stub the tool *results* but keep the calls;
+remove calls and results entirely but keep visible reasoning; remove prose and
+reasoning but **never** the goal stack; and only when compacted records have
+themselves piled up, summarize.
+
+**Stubs are synthesized, not stored.** A `RedactResult` stub is computed by the
+reducer from the event it supersedes — the tool's name, the size, the path the
+output still lives at — which makes it deterministic (so replay is stable),
+recoverable (§2.2's greppable log, and Chapter 3's on-disk tool output), and
+free of storage that grows. Only `RedactSummary` stores a `Replacement`,
+because only there is the new content something an LLM wrote and nobody can
+recompute.
+
+**And compaction is an event.** It goes in the log like everything else, which
+is what lets both of this chapter's promises hold at once: the log stays
+complete and append-only, replay reproduces the *compacted* context exactly,
+and the context stays bounded. A framework that compacts by mutating its
+in-memory history has quietly given up on replay, and will not notice until it
+needs to debug a session it can no longer reconstruct.
+
+The policy — what thresholds trigger which level, and where the boundaries fall
+— is context engineering, and it gets its own chapter. Chapter 2 owes it only a
+shape it will not have to break.
+
 **Note what is absent: there is nowhere to put system prompt text.** That is
 deliberate and structural. The system prompt is an *output*, computed by the
 renderer from `Config` (§2.4). If a reader wants to store it, they will have to
@@ -583,6 +650,8 @@ uses yet. Answer honestly, in the text:
 | `OpaquePart` | thinking signatures | every chapter; never interpreted |
 | `TurnState.ToolsPending` | replaying supplied logs | Ch3 |
 | `RedactedPart` | fully exercised | Ch7 |
+| `Redaction` levels above `RedactResult` | not exercised | context engineering — the compaction gradient |
+| `RedactData.From`/`To` as a span | spans of one | context engineering — "every tool call before the last save_memory" |
 
 This table is the write-once discipline made visible, and it is the chapter's
 answer to "am I over-engineering?" — no, and here is the receipt.
@@ -847,6 +916,23 @@ and three ways in and out of it.**
    design for them prematurely? Leaning yes, briefly — write-once means readers
    will reasonably ask "should I leave room for X?", and the honest answer is
    "no, we sequenced it so you don't have to."
+
+6. **Does the goal stack belong in Chapter 2's `Context`?** The compaction
+   gradient names it as the thing that survives *every* level of redaction —
+   "the conversation and visible reasoning go, but never the stack of goals."
+   That makes it a first-class context member, and it satisfies the
+   no-unbounded-growth rule (bounded by nesting depth, not by time). But
+   Chapter 2 has no concept of goals and cannot motivate one, so introducing it
+   here would be the speculative abstraction this chapter otherwise argues
+   against. Leaning: name it in the forward-looking table, add the field in the
+   context-engineering chapter. Adding a *new* field later is additive;
+   reshaping an existing one is not — so the cost of deferring is low.
+7. **Where does the context-engineering chapter go?** It depends on tool
+   results existing (Ch3) and on the system prompt existing (Ch6 skills),
+   because one of its central claims is that memory belongs in the message
+   history rather than the system prompt. That puts it at Ch7 or later. Its
+   *hook* — the `Redacted` event — is established here, so placement is
+   genuinely flexible and need not be settled now.
 
 ---
 
