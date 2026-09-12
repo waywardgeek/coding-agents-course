@@ -932,7 +932,8 @@ and three ways in and out of it.**
    because one of its central claims is that memory belongs in the message
    history rather than the system prompt. That puts it at Ch7 or later. Its
    *hook* — the `Redacted` event — is established here, so placement is
-   genuinely flexible and need not be settled now.
+   genuinely flexible and need not be settled now. Ideas captured in
+   `book/chapter-context-engineering-notes.md`.
 
 ---
 
