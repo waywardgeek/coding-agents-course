@@ -1,14 +1,13 @@
-// Command grade is the Chapter 1 auto-grader.
+// Command grade runs a student submission against the course auto-grader.
 //
-//	grade ./solutions/ch01      # build and grade a package directory
-//	grade ./some/prebuilt-bin   # grade an existing executable
-//	grade -json ./solutions/ch01
+//	grade [-ch N] [-json] [DIR_OR_BINARY]
 //
-// It needs no API key and reaches no network: the submission is pointed at a
-// fake Anthropic server on localhost via ANTHROPIC_BASE_URL.
+// With no path it grades the reference solution for the chosen chapter.
+// Exit status: 0 pass, 1 fail, 2 the grader itself could not run.
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -17,36 +16,50 @@ import (
 )
 
 func main() {
-	asJSON := flag.Bool("json", false, "emit the report as JSON")
-	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "usage: grade [-json] <package-dir|executable>\n")
-		flag.PrintDefaults()
-	}
+	var (
+		asJSON  = flag.Bool("json", false, "emit the report as JSON")
+		chapter = flag.Int("ch", 1, "which chapter's exercise to grade")
+	)
 	flag.Parse()
-	if flag.NArg() != 1 {
-		flag.Usage()
-		os.Exit(2)
+
+	path := flag.Arg(0)
+	if path == "" {
+		path = fmt.Sprintf("./solutions/ch%02d", *chapter)
 	}
 
-	bin, cleanup, err := grade.Build(flag.Arg(0))
+	bin, cleanup, err := grade.Build(path)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "grade: %v\n", err)
+		fmt.Fprintf(os.Stderr, "grader: %v\n", err)
 		os.Exit(2)
 	}
 	defer cleanup()
 
-	res, err := grade.Run(bin)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "grade: %v\n", err)
+	var report grade.Report
+	switch *chapter {
+	case 1:
+		res, err := grade.Run(bin)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "grader: %v\n", err)
+			os.Exit(2)
+		}
+		report = grade.NewReport(grade.Evaluate(res), res.Stderr)
+	case 2:
+		res, err := grade.Ch2Run(bin)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "grader: %v\n", err)
+			os.Exit(2)
+		}
+		report = grade.NewTitledReport(
+			"Chapter 2 — The Real Data Structures", grade.Ch2Evaluate(res), res.Stderr)
+	default:
+		fmt.Fprintf(os.Stderr, "grader: no grader for chapter %d yet\n", *chapter)
 		os.Exit(2)
 	}
 
-	report := grade.NewReport(grade.Evaluate(res), res.Stderr)
 	if *asJSON {
-		if err := report.WriteJSON(os.Stdout); err != nil {
-			fmt.Fprintf(os.Stderr, "grade: %v\n", err)
-			os.Exit(2)
-		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		_ = enc.Encode(report)
 	} else {
 		report.WriteText(os.Stdout)
 	}

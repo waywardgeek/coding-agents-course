@@ -9,6 +9,7 @@ import (
 
 // Report is the full verdict for one submission.
 type Report struct {
+	Title    string  `json:"title"`
 	Checks   []Check `json:"checks"`
 	Score    int     `json:"score"`
 	MaxScore int     `json:"max_score"`
@@ -16,10 +17,15 @@ type Report struct {
 	Stderr   string  `json:"stderr,omitempty"`
 }
 
-// NewReport scores a checklist. A submission passes only if every check passes:
-// there is no partial credit for a conversation that does not exist.
+// NewReport scores a Chapter 1 checklist.
 func NewReport(checks []Check, stderr string) Report {
-	r := Report{Checks: checks, Passed: true, Stderr: stderr}
+	return NewTitledReport("Chapter 1 — A Conversation, the Obvious Way", checks, stderr)
+}
+
+// NewTitledReport scores a checklist. A submission passes only if every check
+// passes: there is no partial credit for a conversation that does not exist.
+func NewTitledReport(title string, checks []Check, stderr string) Report {
+	r := Report{Title: title, Checks: checks, Passed: true, Stderr: stderr}
 	for _, c := range checks {
 		r.MaxScore += c.Points
 		r.Score += c.Earned
@@ -32,7 +38,11 @@ func NewReport(checks []Check, stderr string) Report {
 
 // WriteText renders a human-readable report.
 func (r Report) WriteText(w io.Writer) {
-	fmt.Fprintln(w, "Chapter 1 — A Conversation, the Obvious Way")
+	title := r.Title
+	if title == "" {
+		title = "Chapter 1 — A Conversation, the Obvious Way"
+	}
+	fmt.Fprintln(w, title)
 	fmt.Fprintln(w, strings.Repeat("=", 60))
 	for _, c := range r.Checks {
 		mark := "FAIL"

@@ -10,10 +10,13 @@ from.
 
 ```
 book/                   chapter outlines (the text these graders serve)
-cmd/grade/              the Chapter 1 auto-grader CLI
-internal/fakeanthropic/ deterministic stand-in for the Messages API
-internal/grade/         script, process harness, checks, report
+cmd/grade/              the auto-grader CLI (-ch selects the chapter)
+internal/fakeanthropic/ deterministic stand-ins for the Messages API
+                        (Server: chapter 1; ToolServer: chapter 2, drives a
+                        tool loop and can hold its reply open)
+internal/grade/         scripts, process harnesses, checks, report
 solutions/ch01/         reference solution (the chapter's own code)
+solutions/ch02/         reference solution: event log, reducer, renderer, actor
 scripts/live.sh         run a solution against the real API
 testdata/students/      deliberately defective submissions (grader self-test)
 ```
@@ -100,6 +103,45 @@ that the API is stateless and the conversation lives in your process.
 The probe locates its request by *content* (round 4's user text as the final
 message) rather than by arrival order, so it stays correct even when a
 submission makes stray extra calls.
+
+## Chapter 2 — the exercise contract
+
+Rebuild the Chapter 1 chatbot on an append-only **event log** and a derived
+**context**. For everything Chapter 1 could do it is observably identical.
+Then it does two things Chapter 1 could not have expressed at any price: it
+accepts a **hint** mid-turn, and it survives an **interrupt**.
+
+Three surfaces:
+
+| invocation | behavior |
+|---|---|
+| `./ch02` | grader mode — the Chapter 1 stdio contract, plus directives |
+| `./ch02 chat` | the REPL (type while it is working to steer it) |
+| `./ch02 render LOG` | play LOG → context → render; print the request; **no network** |
+
+Directives extend the Chapter 1 protocol. `{"user": ...}` still expects exactly
+one `{"assistant": ...}`; every other object expects exactly one `{"ok": true}`:
+`{"hint": "..."}`, `{"interrupt": true}`, `{"redact": <seq>}`,
+`{"ephemera": {"instruction": "...", "text": "..."}}`, `{"dump": "<path>"}`.
+
+The log is JSON-lines, one event per line, ascending `seq`.
+
+| check | pts | property |
+|---|---|---|
+| `session` | 0 | diagnostic: the graded session ran; request census |
+| `ch1parity` | 25 | all seven Chapter 1 checks still pass, unchanged |
+| `logdump` | 5 | log serializes and round-trips; `seq` monotonic, never reused |
+| `replay` | 15 | two `render` invocations on one log are byte-identical |
+| `redaction` | 15 | payload gone from the request, still in the log |
+| `ephemera` | 10 | carried in exactly one request, never a dialogue event |
+| `hint` | 15 | received while blocked, classified, positioned, once, retained |
+| `interrupt` | 10 | late tool call recorded and **not** executed; next request legal |
+| `usage` | 5 | cumulative totals from `ResponseEnded` events |
+
+The grader holds its reply open at two chosen moments and types at your program
+while it is blocked on an HTTP request it has already sent. A round-synchronous
+program cannot acknowledge anything in that window, which is how "received
+while blocked" is measured rather than assumed.
 
 ## Grader design rules
 
