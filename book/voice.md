@@ -78,6 +78,12 @@ everything else, and it earns its place by making a mechanism *stick*.
   Those paragraphs are where a reader is deciding whether to trust us.
 - No forced whimsy, no memes with a shelf life, no winking at the reader about
   how quirky this all is.
+- **No profanity.** (Ruled 2026-09-12.) Bill swears freely when describing a
+  vendor in conversation, and those conversations are where the best material
+  comes from — but the book stays clean. The dry version is funnier anyway: the
+  polling-loop line in §2.6 began life as "no fucking way" and lands harder as
+  "the only exercise in this book with no defensible answer." Translate the
+  heat into precision; do not transcribe it.
 
 ## Whose "I"
 

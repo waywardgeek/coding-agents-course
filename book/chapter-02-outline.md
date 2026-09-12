@@ -991,16 +991,38 @@ about the vendor, not about the design. Context diffs are the only honest
 instrument, which is convenient, because they are also the only one the grader
 can read.
 
-> **Authorial note — receipt needed (2026-09-12).** An earlier draft
-> characterised Google's failures here as "a request that returns nothing at
-> all, an error that describes a problem you do not have." That is Bill's
-> direct experience and I believe it, but it is an impression, not a
-> measurement, and §2.5 four hundred lines earlier prints a 4×4 cross-model
-> matrix. Venting next to that much evidence spends the credibility the
-> evidence bought. **Bill: one concrete, dated case — a request that returned
-> an empty body, or an error string that named the wrong cause — and it goes
-> back in, sharper.** Until then the principle below carries the passage,
-> because it does not depend on the characterisation being true.
+> **Authorial note (2026-09-12).** Bill ruled: leave the criticism in. It is
+> now receipted by the deprecation paragraph below, which costs a whole
+> edition and is checkable by anyone with a Vertex account. Keep the
+> criticism and the receipt adjacent — the characterization earns its place
+> because the paragraph under it proves the pattern, not because it is vivid.
+> Do not let a later editing pass separate them.
+
+**Google's API fails in ways that do not announce they are Google's:** a request
+that returns nothing at all, an error that describes a problem you do not have,
+a silence indistinguishable from a bug in your own assembly code.
+
+**The receipt is this book.** As of September 2026, the Gemini surface this
+chapter teaches is deprecated. Its replacement, the Interactions API, is not
+available on Vertex AI — the platform Google sells to exactly the enterprises
+most likely to be reading this. So the chapter documents the deprecated
+surface, because that is the one you can actually reach from where Google put
+you. When Vertex catches up, this book will need a second edition: not because
+anything about agent architecture changed, but because a vendor deprecated a
+surface before shipping the replacement to its own enterprise platform.
+
+**And there is no event to subscribe to.** Google deprecated the old surface
+without shipping any way to learn when the new one reaches Vertex. So the
+migration path is a polling loop with a human in it. I checked a week ago. What
+is the correct interval for polling a vendor's roadmap — weekly? monthly? — is
+left as an exercise to the reader, and it is the only exercise in this book with
+no defensible answer.
+
+Which is the real argument for the seam, made better than any diagram could
+make it. You are not building it to add vendors. You are building it because
+the one vendor you already use will move the ground under you on a schedule
+you do not control, announce it in a changelog, and leave you to find out
+whether your abstraction was real.
 
 **This is the second reason the order is fixed, and the more useful one.**
 Building against the most honest API first is not a difficulty ramp, it is
