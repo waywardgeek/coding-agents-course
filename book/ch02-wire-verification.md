@@ -73,7 +73,7 @@ because the *same* harness produced 400s for the two cases that do fail:
 
 Caveat for print: this is HTTP-level acceptance. Whether the backend internally
 honours a foreign signature is not externally observable. Say *"accepted
-without error"*, not *"honoured"*.
+without error"*, not *"honored"*.
 
 **Recommended replacement framing.** The loud/silent contrast is still
 available and is now better grounded, because it is about *integrity* rather

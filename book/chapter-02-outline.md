@@ -244,7 +244,7 @@ added without a rewrite.
 
 `Idle`, `InputPending`, `InFlight`, `ToolsPending`. (`Interrupted` arrives in
 Chapter 4 — and it must be a *state*, not a flag, or replay re-executes tool
-calls that were cancelled.)
+calls that were canceled.)
 
 | transition | result | note |
 |---|---|---|
@@ -945,9 +945,9 @@ never on the one where you tested.
 
 ### Commands
 
-| command | behaviour |
+| command | behavior |
 |---|---|
-| `./ch02 chat` | Chapter 1's interactive loop, unchanged in observable behaviour |
+| `./ch02 chat` | Chapter 1's interactive loop, unchanged in observable behavior |
 | `./ch02 render LOG` | play `LOG` → context → render; print the vendor request JSON that *would* be sent to stdout, and **nothing else on stdout**; exit `0`. **Makes no network call.** |
 | `./ch02 dump` | write the event log as JSON-lines |
 
@@ -993,7 +993,7 @@ finish Chapter 2.
 
 | check | pts | property |
 |---|---|---|
-| `session` | 0 | stdio protocol honoured; directives acknowledged; request census |
+| `session` | 0 | stdio protocol honored; directives acknowledged; request census |
 | `ch1parity` | 25 | all seven Chapter 1 checks still pass, unchanged |
 | `logdump` | 5 | log round-trips: `dump` → `render` in a fresh process |
 | `replay` | 10 | two renders of one log are byte-identical |

@@ -318,7 +318,7 @@ The setup: ask the model to call `agent_status` repeatedly, narrating between
 calls, so the turn has a middle. Five seconds in, type
 "Please speak like a pirate for the rest of this turn." Then read the dumped
 log and count how many assistant messages happen between the hint being
-*carried* and the model's behaviour changing.
+*carried* and the model's behavior changing.
 
 | model | carriage | first piratical reply after the hint was carried |
 |---|---|---|

@@ -91,7 +91,7 @@ about **integrity, not authorship**:
 
 One caveat for print: 16/16 is HTTP-level acceptance. Whether Google's backend
 *honours* a foreign signature is not observable from outside. Write "accepted
-without error", not "honoured".
+without error", not "honored".
 
 ### M3. `Entry` cannot implement `RedactData`
 
