@@ -34,6 +34,16 @@ new events, new tools, new seams, never "delete what you built." This is why
 Draft 4 exists at all: under write-once, whatever Chapter 2 gets wrong is
 inherited by every chapter after it.
 
+**The escape hatch, stated plainly to the reader.** Write-once binds *us*, not
+you. After each chapter's grading closes we publish the reference solution, and
+**you may start the next chapter from ours instead of your own.** Failing a
+check in Chapter 2 must never end your course in Chapter 4. This is not a
+grudging concession — it is what makes write-once safe to promise. Additive
+means the book never demolishes code you wrote; rebasing means one bad
+structural choice never strands you. The graders cooperate: they run your
+binary and read what it emits, never your source and never its history. No
+check asks whose code it is.
+
 **Claim status:**
 
 - **FALSIFIED and removed** (Draft 3, finding M9): the claim that mid-turn

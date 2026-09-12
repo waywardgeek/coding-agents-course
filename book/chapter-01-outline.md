@@ -271,6 +271,13 @@ rounds, then EOF → program prints `{"usage": {"input": i, "output": o}}` and
 exits 0. **Go required** — the book's code is Go, and later chapters build on
 this program.
 
+**Later chapters build on this program — and you can always get a clean
+start.** After each chapter's grading closes, we publish the reference
+solution, and you may begin any chapter from ours rather than your own. The
+graders will neither know nor care: they run your binary and read what it
+emits, never your source or its history. A chapter you found hard does not
+compound into the next one.
+
 **stdout carries the protocol and nothing else** — one JSON object per line.
 Send logs, progress and diagnostics to **stderr**. A stray `fmt.Println` is a
 protocol violation and will be reported as one. (This is the single most
