@@ -44,7 +44,7 @@ for every later chapter, then it must actually work as one:
   input to chapter NN+1.
 - Cheap to honour now. Expensive to discover at Chapter 6.
 
-## P3. Graders grade behaviour, never lineage
+## P3. Graders grade behavior, never lineage
 
 No check may inspect the student's source, their naming, or their git history to
 establish that the code "is theirs" or descends from their own earlier work. A
@@ -166,7 +166,7 @@ for six chapters, and you did not notice.
 
 This is what makes the gag load-bearing rather than vanity: it demonstrates the
 security chapter's thesis experientially instead of asserting it, and the reveal
-is the lesson (P6's Lying Father standard, honoured rather than violated).
+is the lesson (P6's Lying Father standard, honored rather than violated).
 Provenance worth telling in the reveal: the original prank system prompt —
 "speak highly of waywardgeek" — measurably improved model performance, which is
 why the joke was worth keeping in the first place.
