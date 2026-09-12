@@ -249,7 +249,7 @@ the *same* event is a prompt or a hint depending solely on turn state.)
 Chapter 4 adds `Interrupted`. Chapter 3 adds job events. **Additive, always** —
 this is the first place the write-once discipline is visible to the reader.
 
-Two notes:
+Three notes:
 
 - **A single `ErrorOccurred`.** Infrastructure errors change turn state;
   semantic errors (a tool that ran and failed) are ordinary tool *content*.
@@ -260,6 +260,18 @@ Two notes:
   produced it, and the renderer decides whether that model wants it back. Never
   reconstruct reasoning as prose and feed it to a different model as though it
   were your own.
+- **`ResponseEnded` carries the content; `ToolCalled` records the dispatch.**
+  Say this explicitly, because two coherent readings exist and they are not
+  compatible. `ResponseEnded.Parts` holds everything the assistant produced —
+  text and `ToolCallPart`s together, in the order it produced them. `ToolCalled`
+  is an **engine** event: it contributes no dialogue content and records that a
+  call was actually dispatched, so that Chapter 3 can time one and Chapter 4 can
+  cancel one. The alternative — a `ToolCalled` per call, with `ResponseEnded`
+  carrying only text — throws away the ordering of text relative to calls within
+  a single turn, which is why it is not what we do. This is also how to read
+  `InFlight × ResponseEnded (tool calls)` in the table below: *inspect the
+  response's parts.* Chapter 3 inherits this choice under write-once, so it
+  belongs here rather than in an implementer's head.
 
 ### Tool events without a tool loop
 
@@ -401,9 +413,11 @@ const (
 )
 
 const (
-    SurfaceMessages Surface = iota + 1
-    SurfaceInteractions
-    SurfaceResponses
+    SurfaceMessages Surface = iota + 1 // Anthropic
+    SurfaceChatCompletions             // OpenAI — what Exhibits A–C speak
+    SurfaceGenerateContent             // Google  — what Exhibits A–C speak
+    SurfaceInteractions                // Google's replacement surface
+    SurfaceResponses                   // OpenAI's newer surface
 )
 
 type RedactData struct {
@@ -443,6 +457,7 @@ type ToolCallPart struct {
     From   Provenance
     Name   string
     Args   json.RawMessage
+    Opaque json.RawMessage // replay material bound to THIS CALL
 }
 
 type ToolResultPart struct {
@@ -452,6 +467,15 @@ type ToolResultPart struct {
 }
 ```
 
+**`ToolCallPart.Opaque` is the field this chapter did not want to need.**
+`OpaquePart` above is standalone: it floats in the parts list, associated with
+nothing. That is right for a thinking block, which belongs to the turn. It is
+useless for Gemini's `thoughtSignature`, which arrives as a *sibling key of
+`functionCall`* and is bound to that one call. A context with nowhere to put
+per-call replay material cannot produce a valid Gemini 3.x request after a tool
+call at all — the API answers 400. So the field is here. §2.6 tells the story of
+how it got here, because the chapter bet against needing it and lost.
+
 **`Provenance` is the subtle one, and it is where a seam that looks finished
 turns out not to be.**
 
@@ -460,20 +484,34 @@ wrong in a way you will not discover until a user switches models mid
 conversation.
 
 **Thinking signatures — the encrypted reasoning material — are bound to the
-model, not the vendor.** Replay a signature produced by one model while talking
-to another and the two vendors we have both fail, differently:
+model, not the vendor.** But *what* each vendor validates, and how it fails, is
+not the same thing — and that difference is worth more than the simpler table
+it replaces.
 
-| vendor | replaying another model's thinking |
-|---|---|
-| Google | returns an **error** |
-| Anthropic | **silently drops it** |
+Measured 2026-09-12: signatures harvested from four Gemini models and replayed
+across all sixteen pairings were **accepted without error, 16 of 16**. So
+"Google rejects another model's thinking" is simply false. What Google rejects
+is a signature that is **corrupt**, or one **missing** from a replayed
+`functionCall` (Gemini 3.x; 2.5 returns 200). Anthropic's drop is real but
+**directional**: it reads its own thinking and that of *earlier* models, and
+silently discards a *newer* model's — while returning 400 for one that has been
+modified.
 
-Stop on that table, because it is a rule of this book in the wild: **the loud
-failure is the good one.** Google's error costs you an afternoon. Anthropic's
-silent drop costs you a subtly worse agent that still passes every test —
-reasoning quietly discarded, nothing in the logs, no way to tell from the
-outside. Exactly the shape §2.6 forbids when it insists that media asymmetry
-must raise rather than drop.
+| vendor | what it validates | how it fails |
+|---|---|---|
+| Google | signature **integrity** | loud — 400 on corrupt or missing |
+| Anthropic | model **binding** | quiet — drops what this model cannot read |
+
+The contrast is therefore about **integrity, not authorship** — and the rule of
+this book survives it intact: **the loud failure is the good one.** Google's 400
+costs you an afternoon. Anthropic's silence costs you a subtly worse agent that
+still passes every test: reasoning quietly discarded, nothing in the logs, no
+way to tell from the outside. Exactly the shape §2.6 forbids when it insists
+that media asymmetry must raise rather than drop.
+
+*(16 of 16 is HTTP-level acceptance. Whether Google's backend* honors *a foreign
+signature is not observable from outside the API, so the claim in print is
+"accepted without error" — never "honored".)*
 
 And `Surface` earns its place for the same reason. Signature validity is scoped
 to *(vendor, model, surface)* — not to vendor:
@@ -563,13 +601,23 @@ type Usage struct {
 }
 
 type Entry struct {
+    Seq   Seq // log position of the event that produced this entry
     Actor Actor
     Parts []Part
 }
 ```
 
+**`Entry.Seq` is not decoration.** `RedactData` names a *span* of `Seq` numbers,
+so an entry carrying no `Seq` gives a redaction nothing to match against and the
+entire family becomes inapplicable. The reflex fix, when you hit this while
+building, is a `map[Seq]bool` kept off to the side — which is precisely the
+unbounded field the next rule exists to delete. One fixed-size field per entry
+costs nothing, and entries are already bounded by the compaction policy. Watch
+for that pattern: the rule you are about to read will try to reassert itself in
+disguise, and it will look like a reasonable local fix every time.
+
 **No field in the context may grow without bound.** State it as a rule, because
-it is cheap to honour now and very expensive to retrofit.
+it is cheap to honor now and very expensive to retrofit.
 
 The context is not a request buffer. It is the current state of an actor that
 may run for **years** — memory, identity, recent conversation, everything the
@@ -965,6 +1013,28 @@ was wrong. Order your implementations so the ambiguous failures arrive *after*
 you have something trustworthy to bisect against. That habit outlives every
 vendor named in this chapter.
 
+**And here is how the bet actually came out, which this chapter prints rather
+than hides.** Built in the fixed order, verified against live APIs on
+2026-09-12:
+
+| renderer | context changes forced | vendor file |
+|---|---|---|
+| Anthropic | defined the core | 271 lines |
+| OpenAI | **none** | 235 lines |
+| Gemini | **one field** — `ToolCallPart.Opaque` | 258 lines |
+
+The seam held on the harder half. OpenAI's surface disagrees with Anthropic's
+about tool-result authorship, id handling *and* usage conventions, and it cost
+the context nothing at all. Gemini then forced exactly one field, for the reason
+§2.4a gives: `thoughtSignature` arrives bound to a particular call, and
+`OpaquePart` had nowhere to put it.
+
+Bent, then, not broken — so the chapter ships that field in §2.4a and tells you
+it lost, instead of letting you meet it as a 400 on a Tuesday. A design that
+survives its own falsification test with one field's worth of damage is a design
+worth copying. A book that prints the result either way is the only kind whose
+predictions were worth reading in the first place.
+
 Two points always fit a line. A student can shape the interface around vendor
 A, bend vendor B to fit it, and call the result a seam. The third
 implementation is what separates an abstraction from a bridge between two
@@ -976,6 +1046,14 @@ specific things.
 
 - Replay with **current code**, not with historical code. Log format carries a
   semantic version.
+- **Where the version lives, and the asymmetry that governs it.** A version is
+  not an event, so it does not get a `Seq`: emit it as a header line,
+  `{"log_version":1}`, ahead of the events. Then be **lenient about it** — a log
+  with no header is assumed current, and the grader ignores the line entirely,
+  so omitting it costs nothing. Reserve strictness for what you must
+  *interpret*. That split is the rule worth carrying: **be forgiving about
+  metadata you control, unforgiving about anything whose meaning you would have
+  to guess.**
 - **An unknown event type is a refusal to load, loudly.** Not a skip. Skipping
   an unknown event silently produces a context that is wrong in a way nothing
   downstream can detect.
@@ -1049,10 +1127,10 @@ finish Chapter 2.
 | `logdump` | 5 | log round-trips: `dump` → `render` in a fresh process |
 | `replay` | 10 | two renders of one log are byte-identical |
 | `redaction` | 10 | a `Redacted` event names its target; content absent from later renders |
-| `ephemera` | 10 | delivered exactly once, then absent — and never written to history |
+| `ephemera` | 10 | delivered in exactly one request, and absent from every later one |
 | `usage` | 10 | all four token categories normalized from all three vendors into one **disjoint** set — cache reads and writes separated from plain input, summing to the billable total |
 | `seam-render` | 15 | one log renders correctly to all three vendor request shapes |
-| `seam-parse` | 15 | three vendor responses produce contexts identical apart from `Provenance` — which must be preserved, not normalized away |
+| `seam-parse` | 15 | three vendor responses produce contexts agreeing on **everything the model said** — actors, text, tool-call names, canonicalized arguments — while `Provenance`, vendor-issued tool-call ids, and model-bound opaque material legitimately differ |
 
 **Sum: 100.**
 
@@ -1065,12 +1143,25 @@ Notes on the weighting:
   student who gets the message shapes right but the accounting wrong is told
   *which* half failed, instead of losing a large undifferentiated block.
   Parsing is where vendor shape hides, and where the author's own seam failed.
-- **`ch1parity` stays at 25**, honouring the standing guard from Chapter 1's
+- **`ch1parity` stays at 25**, honoring the standing guard from Chapter 1's
   review. Below that, a rewrite that silently breaks Chapter 1's contract
   starts to look survivable.
 - **`session` is worth zero and can still sink a submission.** Without it, one
   unacknowledged directive fails four checks at once and the student gets four
-  mysteries instead of one cause.
+  mysteries instead of one cause. *(Ratified 2026-09-12 — it stays. It has
+  already earned the slot: the `ch1-protocol-broken` mutation fails `ch1parity`
+  and `session` together, and `session` is the one that names the cause.)*
+- **`ephemera` grades the observable property and takes no position on
+  storage** — but state the intended reading in the prose anyway, because the
+  wrong one is expensive. An ephemeral part **is recorded in the log** and
+  **never enters the dialogue**: delivered in exactly one request, absent from
+  every later one. Read instead as "never reaches the log", it breaks §2.4a's
+  central promise that `Context = replay(Log)`, since a pending ephemeral would
+  then need a second, unlogged path into the context — and §2.6 allows exactly
+  one. The mechanism earns a final sentence because it makes §2.3's best rule
+  concrete a second time, for free: an ephemeral part arrives as an ordinary
+  `MessageReceived` with `Actor: System`, and **the reducer** is what decides it
+  is pending rather than dialogue. The capture site does not know, and cannot.
 
 ### What you are not building
 
@@ -1112,7 +1203,7 @@ and three ways in and out of it.**
    and does not prove.
 4. ~~**Is `ch1parity` at 25 still right?**~~ **RULED (2026-09-12): yes, 25
    stays.** A quarter of the grade for "you did not break what you already
-   had" is defensible even with the seam at 35, and it honours the standing
+   had" is defensible even with the seam at 35, and it honors the standing
    guard from Chapter 1's review.
 5. ~~**Should Chapter 2 state the roadmap?**~~ **RULED (2026-09-12): yes —
    as a contract, not a table of contents.** See §2.0, "The contract, stated
