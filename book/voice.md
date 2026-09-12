@@ -68,6 +68,26 @@ reach print.
 Humor is allowed and encouraged. It is not decoration — it is load-bearing like
 everything else, and it earns its place by making a mechanism *stick*.
 
+**Err toward comedy, not dryness.** (Ruled by Bill, 2026-09-12: *"I'd rather
+err on the side of comedy than dryness."*) The operational form of this rule is
+**not** "add jokes" — that produces forced whimsy, banned four bullets down. It
+is **stop sanding the absurdity out.** The default drafting instinct
+neutralizes a funny truth into a neutral one:
+
+> *Neutralized:* Anthropic represents tool results as `user` messages.
+>
+> *Not neutralized:* the wire format makes you file the tool's testimony under
+> the user's name, because the schema will not let anyone else speak.
+
+Same fact. The second is funnier **and more accurate**, because it tells you
+the misattribution is forced rather than chosen. That is the test: when the
+funnier phrasing is also the more precise one, it is the right phrasing. When
+the joke needs the fact bent even slightly, cut the joke — never the fact.
+
+This rule fails safe. Its worst outcome is a flat sentence. The worst outcome
+of "be funnier" is a book trying too hard in front of readers who came for
+receipts.
+
 - **Best source: the material's own absurdity.** Gemini disagrees with itself
   about whether its own token counts are nested. Anthropic's API makes you file
   a tool result under the *user's* name because the schema demands alternation.
