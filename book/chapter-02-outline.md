@@ -191,10 +191,11 @@ Two notes:
   semantic errors (a tool that ran and failed) are ordinary tool *content*.
   Conflating them is why agents get stuck retrying a compile error as though it
   were a network outage.
-- **Thinking text is log-only.** The context carries opaque vendor replay
-  material — a signature, a redacted block, an id — and the renderer decides
-  whether that vendor wants it back. Never reconstruct reasoning as prose and
-  feed it to a different vendor as though it were your own.
+- **Thinking text is log-only.** The context carries opaque replay material —
+  a signature, a redacted block, an id — tagged with the exact model that
+  produced it, and the renderer decides whether that model wants it back. Never
+  reconstruct reasoning as prose and feed it to a different model as though it
+  were your own.
 
 ### Tool events without a tool loop
 
@@ -235,7 +236,7 @@ The context is **vendor-independent by construction**, and this chapter is the
 only one that can prove it.
 
 Contents: the dialogue (ordered, actor-attributed, parts-structured), pending
-ephemera, redaction state, token accounting, and opaque per-vendor replay
+ephemera, redaction state, token accounting, and opaque per-model replay
 material carried but never interpreted.
 
 **Content is Parts, not a string.** Text, tool calls, tool results, images,
@@ -310,9 +311,17 @@ type MessageData struct {
 }
 
 type ResponseData struct {
-    Parts  []Part
-    Usage  Usage
-    Vendor string // which vendor produced this. Load-bearing; see below.
+    Parts []Part
+    Usage Usage
+    From  Provenance // NOT a vendor string. See below — this is load-bearing.
+}
+
+// Provenance records who produced content. Recorded at WRITE time by the
+// client that produced it, NEVER inferred later.
+type Provenance struct {
+    Vendor  string // "anthropic" | "google" | "openai"
+    Model   string // "claude-opus-5" — the exact model, not the vendor
+    Surface string // "messages" | "interactions" | "responses"
 }
 
 type RedactData struct {
@@ -328,11 +337,11 @@ type Part interface{ isPart() }
 
 type TextPart   struct{ Text string }
 type BlobPart   struct{ MIME, Path string } // on disk, never inline
-type OpaquePart struct{ Vendor string; Data json.RawMessage }
+type OpaquePart struct{ From Provenance; Data json.RawMessage }
 
 type ToolCallPart struct {
-    CallID string // the ID AS ISSUED, by the vendor named below
-    Vendor string
+    CallID string // the ID AS ISSUED, by the model named in From
+    From   Provenance
     Name   string
     Args   json.RawMessage
 }
@@ -344,18 +353,63 @@ type ToolResultPart struct {
 }
 ```
 
-**`ToolCallPart.Vendor` is the subtle one, and it is worth the chapter's
-attention.** The tool-call id is the single place a vendor's vocabulary
-legitimately enters the context — you cannot answer a call without quoting the
-id that made it. So it is carried as opaque replay material, **tagged with the
-vendor that issued it**.
+**`Provenance` is the subtle one, and it is where a seam that looks finished
+turns out not to be.**
 
-Which produces a real forced discovery: render a conversation containing an
-Anthropic-issued `toolu_…` id to OpenAI and the id is meaningless. The renderer
-must synthesize one — and it must be **derived from `Seq`**, not generated
-randomly, because `replay` compares bytes and a random id is one of the four
-non-determinism sources named in §2.7. The seam and the determinism rule meet
-here, and students who wire them up independently will collide.
+The naive version of this field is `Vendor string`. That is wrong, and it is
+wrong in a way you will not discover until a user switches models mid
+conversation.
+
+**Thinking signatures — the encrypted reasoning material — are bound to the
+model, not the vendor.** Replay a signature produced by one model while talking
+to another and the two vendors we have both fail, differently:
+
+| vendor | replaying another model's thinking |
+|---|---|
+| Google | returns an **error** |
+| Anthropic | **silently drops it** |
+
+Stop on that table, because it is a rule of this book in the wild: **the loud
+failure is the good one.** Google's error costs you an afternoon. Anthropic's
+silent drop costs you a subtly worse agent that still passes every test —
+reasoning quietly discarded, nothing in the logs, no way to tell from the
+outside. Exactly the shape §2.6 forbids when it insists that media asymmetry
+must raise rather than drop.
+
+And `Surface` earns its place for the same reason. Signature validity is scoped
+to *(vendor, model, surface)* — not to vendor:
+
+- Gemini **Interactions** attaches signatures to thought steps and built-in
+  tool steps, but never to standard function calls.
+- Gemini legacy **generateContent** returns a 400 if you replay a
+  `functionCall` *without* its signature.
+
+So a coarse vendor tag cannot even decide whether to *include* the material,
+let alone whether it is replayable. **Without the exact model, a Gemini
+renderer cannot construct a valid request at all.**
+
+Hence the rule, which is about capture rather than rendering:
+
+> Provenance is recorded at **write time**, by the client that produced the
+> content, and is never inferred afterwards. A renderer may read it. Nothing
+> may reconstruct it.
+
+Inference is impossible in principle here — by the time you are rendering, the
+model that produced a signature three turns ago is simply not derivable from
+anything else in the context. Miss it at capture and the information is gone.
+
+### The tool-call id, and where it collides with replay
+
+The same field carries a second load. A tool-call id is the one piece of vendor
+vocabulary that legitimately enters the context — you cannot answer a call
+without quoting the id that made it.
+
+Render a conversation holding an Anthropic `toolu_…` id to OpenAI and it is
+meaningless, so the renderer must synthesize one. It must be **derived from
+`Seq`**, not generated randomly, because `replay` compares bytes and a random
+id is one of the four non-determinism sources named in §2.7. The seam and the
+determinism rule meet at this field, and students who wire them up
+independently will collide.
 
 ### The context
 
@@ -379,8 +433,19 @@ deliberate and structural. The system prompt is an *output*, computed by the
 renderer from `Config` (§2.4). If a reader wants to store it, they will have to
 add a field — and adding it is the moment to stop and re-read §2.4.
 
-Equally absent: `role`, `content`, `tool_use_id`, `assistant`. If any vendor's
-vocabulary appears in these types, the seam has already leaked.
+Equally absent: `role`, `content`, `tool_use_id`, `assistant`.
+
+**But note the distinction `Provenance` forces, because it looks like a
+violation and is not.** Storing `"anthropic"` or `"claude-opus-5"` is recording
+a *fact about where bytes came from*. Storing `role` or `tool_use_id` would be
+adopting a vendor's *description of what the bytes are*. The first is history —
+it happened, it is not re-derivable, and throwing it away is lossy. The second
+is a format decision, and format decisions belong in the renderer.
+
+The test to apply to any field you are tempted to add: **could this have been
+different if the same conversation had happened against another vendor?** If
+yes, it is provenance and it belongs. If it is just that vendor's word for
+something you already model, it has leaked.
 
 ### The seam
 
@@ -533,10 +598,18 @@ Three response shapes normalize to identical context:
 | OpenAI | `choices[0].message.content` | `.tool_calls[]` | `finish_reason` |
 | Gemini | `candidates[0].content.parts[]` | `functionCall` parts | `finishReason` |
 
-The grader's real question: **feed all three responses, get byte-identical
-contexts.** Anything that differs is vendor shape that leaked past the parser —
-and leaked vendor shape is precisely what makes the second implementation a
-copy-paste.
+The grader's real question: **feed all three responses, get contexts that are
+byte-identical apart from `Provenance`.** Everything the model *said* must
+normalize; exactly one thing must survive — the record of who said it, and with
+which model, on which surface.
+
+That "apart from" is not a loophole, it is the whole distinction of §2.4a: the
+content normalizes because content is ours, the provenance persists because it
+is history and is not re-derivable. A submission whose three contexts are
+*fully* identical has thrown provenance away and will be unable to render a
+valid Gemini request later. A submission whose contexts differ anywhere else
+has leaked vendor shape past the parser — and leaked vendor shape is precisely
+what makes the second implementation a copy-paste.
 
 Also normalized here: token accounting (`usage.input_tokens` /
 `prompt_tokens` / `usageMetadata.promptTokenCount`), and errors — an HTTP 429
@@ -553,7 +626,8 @@ is an `ErrorOccurred`, not a response.
   violation into silently-wrong output.
 - **Opaque replay material is carried, never interpreted.** Thinking
   signatures, tool-use ids, cache markers: store them, hand them back to the
-  vendor that issued them, and never to a different one.
+  **exact model** that issued them, and never to a different one. Vendor is not
+  a fine enough grain — see `Provenance` in §2.4a.
 - **The context never learns a vendor's vocabulary.** If the word `assistant`,
   `toolu_`, or `functionCall` appears in your context types, the seam has
   already leaked.
@@ -644,7 +718,7 @@ finish Chapter 2.
 | `ephemera` | 10 | delivered exactly once, then absent — and never written to history |
 | `usage` | 5 | token accounting normalized from all three vendors |
 | `seam-render` | 15 | one log renders correctly to all three vendor request shapes |
-| `seam-parse` | 20 | three vendor responses produce byte-identical contexts |
+| `seam-parse` | 20 | three vendor responses produce contexts identical apart from `Provenance` — which must be preserved, not normalized away |
 
 **Sum: 100.**
 
