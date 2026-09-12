@@ -211,7 +211,7 @@ missing bonus.
 | ch | book egg | solution egg | status |
 |---|---|---|---|
 | 1 | TBD — plant with the prose | `solutions/ch01` | neither planted |
-| 2 | TBD — plant with the prose | `solutions/ch02` | neither planted |
+| 2 | TBD — plant with the prose | `solutions/ch02/part.go`, the `OpaquePart` doc comment — quoted as a decoded replay block | solution planted; book egg outstanding |
 | 3–6 | TBD | TBD | chapters not written |
 | 7 | the reveal, plus its own egg | `solutions/ch07` | not written |
 | 8 | TBD | TBD | chapter not written |
