@@ -299,19 +299,94 @@ attractive from a distance.
 - The Go tool ignores `testdata/`, so mutant scratch directories inside the
   module do not break `go build ./...`.
 
-**NOT verified, and still resting on the author's direct experience** — flagged
-here because the outline's own header asks for it:
+**Measured live against the real API on 2026-09-11** (four runs of
+`scripts/live_hint.py`, plus a bare curl probe; logs in `/tmp/live-hint/`).
+Every cell is n=1 — treat these as observations that falsify a claim, not as
+characterisation of the models.
 
-- The **July 2025 priority claim** for mid-turn hints. Unchanged, unverified.
-- The **model-capability split**: mid-turn `system` messages on
-  `claude-opus-4-8` and newer, but not `claude-sonnet-5`. I deliberately built
-  the grader to accept *either* carriage without testing *either* against a
-  real model, so nothing in the rig constitutes evidence for this claim.
-- The **one-round lag** on models without the first-class path.
+The setup: ask the model to call `agent_status` repeatedly, narrating between
+calls, so the turn has a middle. Five seconds in, type
+"Please speak like a pirate for the rest of this turn." Then read the dumped
+log and count how many assistant messages happen between the hint being
+*carried* and the model's behaviour changing.
 
-The cheapest way to close all three: run the chapter's own pirate demo through
-`scripts/live.sh` against `claude-opus-4-8` and `claude-sonnet-5` and record
-what comes back. That is a fifteen-minute experiment producing a citable
-result, and the chapter currently makes a falsifiable claim without one.
+| model | carriage | first piratical reply after the hint was carried |
+|---|---|---|
+| `claude-sonnet-5` | appended text block (the hack) | #1 |
+| `claude-sonnet-5` | mid-turn `system` message | #1 |
+| `claude-opus-4-8` | appended text block (the hack) | #1 |
+| `claude-opus-4-8` | mid-turn `system` message | #1 |
 
-Model **ids** were confirmed against `GET /v1/models`. Capability was not.
+### M9. The model-support table in §2.6a is falsified as written — replace it with a mechanism
+
+§2.6a states that mid-turn `system` messages are supported on
+`claude-opus-4-8` and newer but **not** on `claude-sonnet-5`. That is not what
+happens. `claude-sonnet-5` accepted a `{"role":"system"}` entry inside
+`messages` and obeyed an instruction that appeared nowhere else in the request
+— confirmed twice, once through the full rig and once through a bare curl that
+returned HTTP 200 with the model replying in dialect.
+
+A supporting inference: the trailing `system` message was accepted directly
+after a user message carrying tool results. Were the API silently coercing that
+role to `user`, the request would have held two consecutive user messages,
+which Anthropic classically rejects. It did not. That is evidence of genuine
+special handling rather than coercion — not proof, absent vendor docs.
+
+**And the lag is not a vendor property at all.** Repeating the experiment with
+the one tool patched to sleep 15 seconds:
+
+| carriage | hint typed | hint *received* | mailbox blackout |
+|---|---|---|---|
+| appended text block | t+5.0s | t+16.4s | **+11.4s** |
+| mid-turn `system` | t+5.0s | t+16.3s | **+11.3s** |
+
+Identical, because the delay is not in the API. It is in the engine: the
+reference solution executes its tool on the same goroutine that drains the
+mailbox, so while a tool runs the actor is deaf. With Chapter 2's instant
+`agent_status` this never shows; with a build or a test run it is the whole
+lag. Both carriages then deliver on the first request after the tool finishes.
+
+The only irreducible lag is the response **already in flight** when you type.
+No carriage can fix that one, because the HTTP request has already left.
+
+Recommend replacing the support table with the mechanism, which outlives any
+model release: *a hint is carried by the next request the engine sends. The
+hack needs somewhere to attach — the next tool results — so anything that
+delays the next request delays the steer. What actually determines
+responsiveness is whether your engine can still hear you while it works.*
+
+Keep the two carriages in the chapter; they are both real and the renderer
+should choose. Drop the claim about which models accept which, or re-verify it
+under the author's own conditions and state those conditions.
+
+### E7. The reference solution runs tools on the mailbox goroutine, and the grader cannot catch it
+
+Found by the experiment above, and worth the chapter's attention because it
+undercuts §2.5's own thesis: an actor whose mailbox goes deaf whenever it does
+work does not really have one.
+
+The exercise cannot detect this. Its single tool is instant *by specification*
+(it must be, because `replay` byte-compares its output), so a submission that
+runs tools synchronously passes every check. The grader's gate proves only that
+the program stays responsive while blocked on **HTTP**, which is the easier
+half.
+
+Recommend: say so in the prose as a known boundary with a forward reference —
+"Chapter 3 runs tools off the engine goroutine, and that is when the mailbox
+starts earning its keep" — rather than complicating this chapter's listing with
+tool cancellation. I did not change the reference solution, because the fix
+belongs with the tool loop and this is not the tool chapter. That is a judgement
+call and it is reversible.
+
+**Still NOT verified, and still resting on the author's direct experience:**
+
+- The **July 2025 priority claim** for mid-turn hints. Unchanged, and outside
+  what any experiment here could settle.
+- The author's own observation of a lag that disappeared on switching to the
+  `system` carriage. Nothing above contradicts it — the runs here reproduce a
+  multi-second lag with exactly the right shape, but locate its cause in the
+  engine rather than the API. If CodeRhapsody executes tools off its main loop,
+  then its lag has a different cause and is worth finding before print.
+
+Model **ids** were confirmed against `GET /v1/models`; both
+`claude-opus-4-8` and `claude-sonnet-5` exist.

@@ -2,3 +2,5 @@
 /ch01
 *.test
 .DS_Store
+testdata/slowtool/
+testdata/mutants/

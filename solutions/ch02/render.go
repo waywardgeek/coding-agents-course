@@ -14,6 +14,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"os"
 )
 
 // Wire types are structs, never maps. Go randomizes map iteration order, and a
@@ -193,12 +194,34 @@ func Render(c *Context, model string, maxTokens int) wireRequest {
 	// The hint, carried exactly once, in the last position. After this request
 	// the RequestSent event moves it into the dialogue, where it stays
 	// forever: delivered once, remembered always.
+	//
+	// There are two legal carriages and which one is correct depends on the
+	// model, which is the whole argument for this code living in the renderer.
+	// HINT_CARRIAGE=system uses the API's first-class mid-turn system message;
+	// anything else uses the original hack, a text block appended after the
+	// tool results. The context above knows nothing about either.
 	for _, h := range c.PendingHints {
+		if hintCarriage() == "system" {
+			msgs = append(msgs, wireMessage{
+				Role:    "system",
+				Content: []wireBlock{{Type: "text", Text: h.Parts.Text()}},
+			})
+			continue
+		}
 		appendUserBlocks([]wireBlock{{Type: "text", Text: h.Parts.Text()}}, false)
 	}
 
 	req.Messages = msgs
 	return req
+}
+
+// hintCarriage selects how a pending hint reaches the model. Default is the
+// hack, because it works everywhere.
+func hintCarriage() string {
+	if v := os.Getenv("HINT_CARRIAGE"); v != "" {
+		return v
+	}
+	return "append"
 }
 
 // Marshal renders the request to the exact bytes that go on the wire.
