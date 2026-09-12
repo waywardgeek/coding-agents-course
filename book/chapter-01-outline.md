@@ -272,11 +272,14 @@ exits 0. **Go required** — the book's code is Go, and later chapters build on
 this program.
 
 **Later chapters build on this program — and you can always get a clean
-start.** After each chapter's grading closes, we publish the reference
-solution, and you may begin any chapter from ours rather than your own. The
-graders will neither know nor care: they run your binary and read what it
-emits, never your source or its history. A chapter you found hard does not
-compound into the next one.
+start.** The course is self-paced and every reference solution is public from
+day one, so you may begin any chapter from ours rather than your own. Create an
+account and the course will record the chapters you solve, so you can see your
+own progress; nothing is gated behind it, and reading a solution instead of
+writing one is a legitimate way to take this course. The graders will neither
+know nor care whose code they are running: they execute your binary and read
+what it emits, never your source or its history. A chapter you found hard does
+not compound into the next one.
 
 **stdout carries the protocol and nothing else** — one JSON object per line.
 Send logs, progress and diagnostics to **stderr**. A stray `fmt.Println` is a

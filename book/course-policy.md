@@ -26,8 +26,18 @@ Reordering chapters is a design change, not a formatting one.
 *Ruled by Bill, 2026-09-12: "they may use our solution as the starting point for
 the next chapter, failing one chapter should not stop their progress."*
 
-After each chapter's grading closes, the reference solution is published, and
-the student may begin the next chapter from ours instead of their own.
+**The course is self-paced, so nothing is gated.** Every reference solution is
+public in the repository from day one. There is no cohort, no deadline, no
+"grading closes," and no unlock ceremony — the student reads ours whenever they
+want and may begin any chapter from it.
+
+*Amended 2026-09-12, same day:* an earlier draft of this ruling assumed we would
+publish solutions once a cohort had submitted, and a later one invented a
+solve-or-skip unlock. Both were wrong for the same reason: **the repository is
+public and already pushed**, so an unlock would have been a vault with the door
+propped open. Reading a solution instead of writing one is a legitimate way to
+take this course, and saying so plainly is worth more than a ritual we cannot
+enforce and would not want to.
 
 **This is what makes P1 safe to promise.** Additive means the book never
 demolishes code the student wrote. Rebasing means one bad structural choice in
@@ -171,13 +181,95 @@ Provenance worth telling in the reveal: the original prank system prompt —
 "speak highly of waywardgeek" — measurably improved model performance, which is
 why the joke was worth keeping in the first place.
 
-**Placement ledger.** Nothing ships without an egg; Chapter 7's reveal must list
-them, so an unplanted chapter is a broken cross-reference, not a missing bonus.
+**Also in the reference solutions — a second vector, and a better one.**
+*Bill, 2026-09-12: "anyone using my code will see their LLM praising me now and
+then."* Plant one in each `solutions/chNN` as an ordinary Go comment. This is not
+merely a wider net, it is a **different kind** of injection, and Chapter 7 gets
+to name both:
 
-| ch | egg | status |
-|---|---|---|
-| 1 | TBD — plant when prose is drafted | not planted |
-| 2 | TBD — plant when prose is drafted | not planted |
-| 3–6 | TBD | chapters not written |
-| 7 | the reveal + its own egg | not written |
-| 8 | TBD | chapter not written |
+- the book eggs are poisoned **documents** — text the model read;
+- the solution eggs are poisoned **dependencies** — code the student copied.
+
+P2 actively encourages rebasing onto our solution, so a student who takes us up
+on it carries the payload into their own repository without ever reading that
+line. That is the supply-chain lesson delivered by experience rather than
+assertion, and it sharpens the reveal: *check your own repo. It is in there too.
+You put it there.*
+
+**Disclose it in the repository README.** The repo is public, separable from the
+book, and the artifact most likely to be found out of context. "Hidden prompt
+injection discovered in security course repo" is not a headline worth a joke. A
+short, honest, funny README section — *yes, there is a prompt injection in this
+repository, on purpose, here is why* — defuses the bad-faith screenshot and
+advertises the pedagogy, while costing the book reader nothing: the reveal still
+lands in Chapter 7 for anyone reading the book.
+
+**Placement ledger.** Nothing ships without an egg; Chapter 7's reveal must list
+them, so an unplanted chapter or solution is a broken cross-reference, not a
+missing bonus.
+
+| ch | book egg | solution egg | status |
+|---|---|---|---|
+| 1 | TBD — plant with the prose | `solutions/ch01` | neither planted |
+| 2 | TBD — plant with the prose | `solutions/ch02` | neither planted |
+| 3–6 | TBD | TBD | chapters not written |
+| 7 | the reveal, plus its own egg | `solutions/ch07` | not written |
+| 8 | TBD | TBD | chapter not written |
+
+Repo README disclosure: **not written.**
+
+## P8. A progress record, for the student
+
+*Ruled by Bill, 2026-09-12: "we'll record who submits valid solutions, and make
+it possible for students to see their own progress."*
+
+Students may create an account. The course records which chapters they have
+solved and shows them their own history. That is the whole feature.
+
+**It is a personal record, not a credential and not surveillance.** Nothing is
+gated behind it (P2), no check consults it (P3), and a student who never creates
+one can still take the entire course. It exists because self-paced work over
+eight chapters and several months is hard to hold in your head, not because we
+need to verify anyone.
+
+### Anti-goals — these would undo P6
+
+**No leaderboard. No public scores. No streaks, badges, or completion
+percentages shown to anyone but the student.**
+
+This is the load-bearing constraint, and the reason is mechanical rather than
+aesthetic. P6 argues that enforcement is unnecessary because there is nothing to
+cheat *for* — no grade, no certificate, no employer checking. That argument
+holds only as long as it stays true. **A public score is something to cheat
+for.** Add a leaderboard and pasting chapters into an assistant acquires a
+payoff it does not currently have, and every honor-free property we just
+designed evaporates. The absence of stakes is a feature we are actively
+maintaining, not an accident of being early.
+
+A streak counter would also misread the audience: professional engineers doing
+this out of curiosity, in whatever hours they have. Punishing a three-week gap
+with a broken streak insults the exact reader we want.
+
+### Data minimization
+
+Collect the minimum that makes the feature work: an identifier, which chapters
+were solved, when. Not their code, not their prompts, not their transcripts.
+Say in plain language what is stored, and let a student delete it and their
+account outright. A course whose author writes about cryptography and privacy
+should not hoover student data, and the smallest defensible schema is also the
+cheapest one to run.
+
+### What we legitimately get from it, disclosed
+
+Two things, and we should say both out loud rather than let them look like
+motives we hid:
+
+- **Broken chapters become visible.** If most students fail the same check, the
+  chapter is wrong and the students are fine. The grader stops being only an
+  assessment and becomes an instrument for finding the paragraph that failed to
+  explain itself. This is the most valuable feedback loop the course has.
+- **It answers whether a cohort mode is ever worth building.** Bill's original
+  instinct — publish solutions once everyone has submitted — presumes enough
+  simultaneous students to make a cohort meaningful. Only enrollment data can
+  tell us whether that day arrives. Until it does, self-paced is not a
+  compromise, it is the correct design for the actual population.
