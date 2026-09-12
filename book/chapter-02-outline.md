@@ -132,6 +132,38 @@ defensive over-engineering is the failure mode this book argues against
 everywhere else. So: trust it. If a later chapter makes you delete something
 from this one, that is our bug, not yours.
 
+### "But I only use one vendor"
+
+The obvious objection, and the honest answer is not the one the chapter title
+suggests. This seam is not mainly for people running three models. It is for
+people running one.
+
+You do not have to add a competitor for the wire format underneath you to
+change. **As of September 2026, Google has deprecated the API this project
+uses, and its replacement — the Interactions API — is not yet available on
+Vertex AI, which is the access path many corporate users are required to
+take.** The old surface is marked for removal and the new one cannot be
+reached from where they stand. That is not a hypothetical migration used to
+motivate a design. It is a live one, and nobody involved chose it.
+
+With a seam, that is an afternoon: write a renderer for the new surface, keep
+the old one until it dies, switch on a field, and let the logs replay
+unchanged. Without one — with a data structure shaped like a particular
+vendor's request body, which is §2.0's mistake — it is a rewrite, and §2.0 has
+already told you how those go.
+
+This is also why `Provenance` records a **surface** and not merely a vendor
+(§2.4a). The vendor is not the unit of compatibility. One company, one model,
+two incompatible surfaces is an ordinary Tuesday, and replayed material is
+bound to the surface that produced it. `SurfaceInteractions` is in the enum
+because this was foreseeable, not because it was foreseen.
+
+> *Authorial note: keep this receipt-shaped and dated, per `voice.md`. The
+> verifiable facts — a deprecated surface, a replacement absent from Vertex —
+> are devastating on their own and need no help. Do not source the claim to
+> anything internal to Google; the public record carries it, and the book's
+> author works there.*
+
 ---
 
 ## §2.1 History ≠ Context
