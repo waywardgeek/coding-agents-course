@@ -1,939 +1,540 @@
-# Chapter 2 — The Real Data Structures (outline)
+# Chapter 2 — One Log, Three Vendors
 
-**Building Advanced AI Coding Agents** — working outline, chapter 2 of N.
-Status: outline agreed in discussion 2026-09-11. Prose not yet written.
-Revised 2026-09-11 to apply the lessons of `book/review.md`: the exercise
-section is now specified to the level a grader can actually be built from.
-Open questions 6–9 ruled (agreed as proposed). Real-time hints added as
-§2.6a and as a graded requirement, on Bill's directive. Questions 10–11 also
-ruled: the exercise gains **exactly one** trivial tool (`agent_status`,
-because a turn with no tool call has no middle to steer into) and **requires
-concurrent stdin** (because a hint must be received while blocked).
+*The data structures, and the seam they exist to make possible.*
 
-**Draft 3, 2026-09-11:** applies `book/review-ch02.md` — the coder's empirical
-review, written from having built the grader and reference solution against
-Draft 2. Nine must-fixes (M1–M9), seven enrichments (E1–E7), six standing
-rulings guarded.
-
-**Claim status after the review pass:**
-
-- **FALSIFIED and removed:** the model-support split. Draft 2 stated that
-  mid-turn `system` messages work on `claude-opus-4-8` and newer but **not**
-  on `claude-sonnet-5`. Measured live, `claude-sonnet-5` accepts a mid-turn
-  `{"role":"system"}` entry and obeys an instruction appearing nowhere else
-  in the request — confirmed through the full rig and again through a bare
-  curl returning HTTP 200. The table is replaced by a mechanism (§2.6a).
-- **RELOCATED, not retracted:** the one-round lag. It is real, but it is a
-  property of the *engine*, not of the carriage or the vendor. See §2.6a and
-  the known boundary in the exercise.
-- **STILL UNVERIFIED, and outside what any experiment here can settle:** the
-  July 2025 priority claim for mid-turn hints. It is the author's, dated and
-  falsifiable. Verify before print; "as far as we can determine" stays either
-  way.
-
-Predecessor: `chapter-01-outline.md` (naive Anthropic-specific chatbot,
-`[]{role, content string}`, ends clean and confident — the ambush ruling).
+**Status:** Draft 4, 2026-09-12. Outline only; prose not yet written.
 
 ---
 
-## §2.0 Cold open: the demolition (no warning, per ruling)
+## Draft 4 — what changed and why
 
-The Chapter 1 chatbot works. Now ask it five questions it cannot answer:
+Draft 3 was "the real data structures," with the vendor seam present as an
+*idea* and the exercise targeting Anthropic alone. That is the same mistake the
+chapter now opens by describing: a seam with one implementation is not a seam,
+it is a naming convention. Draft 4 makes the seam the subject, and makes the
+student build three renderers and three parsers over one context.
 
-1. What exactly did the model see on request #3? (Unknown — system line and
-   volatile data aren't in your array.)
-2. Where does a tool result go? (`role:"user"` — a lie you will tell forever.)
-3. Where does a mid-turn human interjection go? (Nowhere; the format has no
-   concept of "mid-turn.")
-4. How do you drop a 50KB output from future requests without destroying
-   your audit record? (You can't — the record and the request are the same
-   object.)
-5. Who said each message? (Two roles, for a world of humans, tools, other
-   agents, and automation.)
+Three structural changes:
 
-**Diagnosis: the array conflates the record with the request.** Every
-failure above is that one sin in different clothes.
+1. **The LLM seam is the chapter.** The data structures are motivated *by* the
+   seam rather than the seam being one of their benefits. Three vendors —
+   Anthropic, OpenAI, Gemini — request rendering **and** response parsing.
+2. **Hints and interrupts moved to Chapter 4.** They are about time and
+   concurrency, not about vendors. Nothing is retracted; the material is
+   preserved verbatim in `book/chapter-04-actors-parking.md`, including review
+   findings M1, M2, M4, E4 and E7.
+3. **The `agent_status` toy tool is gone.** It existed only so a Chapter 2 turn
+   would have a middle for a hint to land in. With tools in Chapter 3 and hints
+   in Chapter 4, the constraint that forced it no longer exists. Chapter 2
+   *renders* logs containing tool events without executing any.
 
-Author's war story: an earlier CodeRhapsody was built on exactly the
-Chapter 1 array — and migrating it to the structures in this chapter
-touched everything, one of the most expensive refactors in the project's
-history. The student gets for free the restart the author had to pay for.
-Delete the Chapter 1 code. Keep the lesson.
+**The write-once constraint now governs the book.** Chapter 1 is the single
+sacrificial chapter. From Chapter 2 on, every chapter is strictly additive —
+new events, new tools, new seams, never "delete what you built." This is why
+Draft 4 exists at all: under write-once, whatever Chapter 2 gets wrong is
+inherited by every chapter after it.
 
-## §2.1 History ≠ Context — the two artifacts
+**Claim status:**
 
-- **History**: the event log. Append-only, auditable, self-contained.
-  Never engineered, never clever. Answers "what happened?" — but retention
-  is *policy*, not principle: keep exact history as long as auditors
-  require; after that, delete or compact freely (see §2.2).
-- **Context**: vendor-independent state — **the state after playing all
-  events in the log**. Rebuilt/updated per round trip; engineered for
-  performance. Answers "what does the model see next?"
-- The provider is stateless, so you own both artifacts — and they are NOT
-  the same thing. Conflating them is the original sin of chat-shaped
-  formats.
-- Pipeline: `EventLog → (play) → Context → (render) → vendor request`.
-- **Two consumers, two projections (ruling)**: the renderer consumes the
-  CONTEXT — what the model sees. **The GUI consumes the EVENT LOG — never
-  the context.** The human sees what happened (redacted stubs, errors,
-  interrupts, tool calls recorded-but-never-executed); the model sees the
-  engineered view. This is also why events carry timestamps: ordering is
-  for the reducer, timestamps are for the GUI. (GUI itself deferred to the
-  second half of the book; the dependency ruling lands here.)
-- **Decline the vendors' stateful conversation APIs (ruling).** Anthropic,
-  Google, and OpenAI all offer server-side conversation state — but if you
-  want to edit history, you can't use it. In an AI coding agent, editing
-  history is one of our MAIN tools (redaction of spent tool results,
-  compaction, per-round context engineering), so we are forced — happily —
-  to send the entire context on every round trip. The full re-send is what
-  makes the outgoing copy disposable and rewriting it free; vendor-held
-  state would make the context the vendor's, not ours. Full re-send is the
-  price of ownership. (Its token cost is largely refunded by prefix
-  caching — a later chapter.)
+- **FALSIFIED and removed** (Draft 3, finding M9): the claim that mid-turn
+  `system` messages work on `claude-opus-4-8`+ but not `claude-sonnet-5`.
+  Measured live; Sonnet 5 accepts and obeys them. That material now lives in
+  the Chapter 4 parking file with the correction applied.
+- **STILL UNVERIFIED:** the July 2025 priority claim for mid-turn hints — now
+  a Chapter 4 problem, not this chapter's.
+- **NEEDS VERIFICATION BEFORE PRINT:** every wire-format detail in §2.6. The
+  three request and response shapes are quoted from working knowledge and must
+  be checked against current vendor documentation by the coder. Wire formats
+  drift, and this chapter is nothing but wire formats.
+
+---
+
+## §2.0 Cold open — the seam I got wrong, and what it cost
+
+Open with the author's own failure, told plainly, because it is the most
+expensive mistake in this book and it looks completely reasonable while you are
+making it.
+
+The sequence:
+
+1. Build an agent against Anthropic. It works.
+2. Extract an interface — `AIClientInterface` — with all the methods needed,
+   as they were needed, by `ClaudeClient`.
+3. Add a second vendor. The interface does not fit, because it was never
+   vendor-shaped; it was Claude-shaped with an interface keyword in front of
+   it. So: copy `ClaudeClient`, paste, edit until Gemini works.
+4. Add a third. Copy, paste, edit until OpenAI works.
+5. Discover, roughly 30,000 lines later, that three near-identical clients
+   drift independently, that every bug must be fixed three times, and that
+   two of the three fixes will be forgotten.
+
+Then the part most books leave out. **The remedy was worse than the disease.**
+The correct seam was eventually designed — one context, one renderer per
+vendor, one parser per vendor — and delivered as a big-bang rewrite. A year
+later the migration is still not finished. The product works. It is also
+semi-broken in ways its author has not finished cataloguing, and some bugs have
+not yet been reported to anyone, including himself.
+
+The lesson has two halves and readers usually get taught only the first:
+
+> **The seam was right. Shipping it as a rewrite was the mistake.**
+> Cutting a seam late does not cost you one refactor. It costs you a tail —
+> and the tail is paid by whoever is using the product while you migrate.
+
+**This is why the chapter charges an hour for something a reader would rather
+skip.** Writing three renderers on day one feels like over-engineering. It is
+the cheapest hour in the book: it buys the shape of an interface that was
+*derived from three implementations* instead of extrapolated from one.
+
+### The demolition (carried forward from Draft 3)
+
+Chapter 1 ended with a working agent and a deliberate attachment to it. This
+section takes it apart. The `[]{role, content}` array cannot express: what the
+model actually returned versus what we chose to send, tool calls and their
+results, a redaction, token accounting, or who said a thing and why. Chapter 1
+was "total garbage, but the student learns the basics" — and the student now
+knows enough to see why.
+
+State the promise honestly, because Draft 3 learned this the hard way when
+scope changed: **the rewrite is observably identical for everything Chapter 1
+could already do.** It then gains something Chapter 1 could not express at any
+price — the same conversation, correctly, to three different vendors.
+
+---
+
+## §2.1 History ≠ Context
+
+The distinction the whole book rests on.
+
+- **History** is an append-only event log. What happened, in order, forever.
+  It is the truth and it is never edited.
+- **Context** is the vendor-independent state you get by replaying that log.
+  It is derived, reconstructible, and disposable.
+- **The request** is what a *renderer* makes from context for one specific
+  vendor. It is disposable and it is a lie by omission — necessarily.
+
+Three consumers, three needs: the renderer reads context; the GUI reads the
+log; the auditor reads the log.
+
+**Full re-send is the price of ownership.** Every request carries the entire
+conversation. You pay for it in tokens (largely refunded by prefix caching, a
+later chapter) and you buy the ability to edit history — which is the core
+capability of a coding agent and the reason §2.6 declines vendor stateful
+conversation APIs.
 
 > **Sidebar: "Is this request mid-turn?" — a bug from building this chapter.**
 >
-> The grader for this chapter needs to know whether an incoming request starts
-> a new turn or continues a tool loop. The obvious test: *does it contain
-> `tool_result` blocks?*
+> Draft 3's grader needed to know whether an incoming request began a new turn
+> or continued a tool loop. The obvious test: *does it contain `tool_result`
+> blocks?*
 >
-> That is wrong, and wrong in exactly the way this section is about. Once a
-> tool loop has happened, **every later request contains those tool results
-> forever**, because history is re-sent in full. Four subsequent new-turn
-> requests got classified as continuations of a loop that had ended three
-> turns earlier.
+> Wrong, and wrong in exactly the way this section is about. Once a tool loop
+> has happened, **every later request contains those tool results forever**,
+> because history is re-sent in full. Four new-turn requests were classified as
+> continuations of a loop that had ended three turns earlier.
 >
-> The fix is to look at what is *new*: match the freshly-typed prompt in the
-> final user message. And the interrupt forces the same fix from another
-> direction — the synthesized `interrupted by user` tool result (§2.6) makes a
-> brand-new turn's request look like an answer to a dangling call.
->
-> The general lesson, which will recur every time you touch the wire: **a
-> request is not a description of the current moment.** It is the entire
-> history, re-sent, with a little new material on the end. Any question you
-> ask of it that sounds like "what is happening right now?" has to be asked of
-> the *end* of it, or of the event log — never of the whole.
+> The general lesson: **a request is not a description of the current moment.**
+> It is the entire history, re-sent, with a little new material on the end. Any
+> question shaped like "what is happening right now?" must be asked of the
+> *end* of the request, or of the log — never of the whole.
+
+---
 
 ## §2.2 The event log
 
-- Append-only. Fine-grained: one tool call is one event; one tool result is
-  one event; one message from one actor is one event. Vendor batching
-  (assistant message with N tool_use blocks) is *renderer output, not truth*.
-- **Ordering is primary; the order determines the state of the context.**
-  Timestamps are metadata for humans, never used for ordering. `Seq` is
-  monotonic, never reused.
-- Self-contained as a unit: log + blob table together are the whole
-  conversation. (Book implementation: all in memory; blobs deduplicated by
-  hash — the same DOM snapshot sent as ephemera fifty times is stored once.)
-- Events are **facts, past tense** — the log records what happened, not
-  commands.
-- **The log is disposable; the context is not.** Because the context is the
-  state after playing the log, any prefix of the past can be deleted and
-  the agent runs on unaffected — going forward requires only the current
-  context. Truncation costs audit, debugging, and GUI history depth (the
-  GUI plays the log, §2.1) — never correctness. The
-  implementation spectrum: full log (maximum auditability) → context
-  snapshot + recent tail → no log at all (memory/disk lean, debugging
-  hard). Replay guarantees (§2.7) apply to the retained span. (Compact,
-  imperfect, searchable renderings of history for debugging and recall —
-  CodeRhapsody's `history.md` — are an advanced topic for a later chapter.)
+- Append-only. Monotonic `Seq`. **Ordering is primary**; wall-clock time is
+  metadata and may be wrong, duplicated, or non-monotonic across machines.
+- Never edited, never reordered, never deleted in place. A redaction is a new
+  event that supersedes, not a mutation of an old one (§2.6).
+- Serialized as JSON-lines so it is greppable with ordinary tools — a property
+  that becomes load-bearing in Chapter 3, when tool output starts arriving by
+  the megabyte.
+
+---
 
 ## §2.3 Events
 
-**The self-contained event rule (load-bearing):** given the current context
-and just the next event — nothing else — we can correctly compute the new
-context state. Consequences:
+### The self-contained event rule (load-bearing)
 
-- Classification lives in the *reducer*, not the event: `MessageReceived`
-  while idle is a prompt; while mid-turn, a hint. The context must therefore
-  carry turn state (§2.4).
-- **The reducer is total**: a defined transition for every (state, event)
-  pair; identity is legal. Two interrupts in a row: second is a no-op, not
-  an error. Races (interrupt crossing an in-flight response) are normal
-  orderings, not corruption.
-
-Write the rule as:
+Given the current context and just the next event — nothing else — we can
+correctly compute the new context. Write the rule as:
 
 ```
 newContext = Apply(context, event)
 ```
 
-That notation describes **information flow**, and it is the claim the chapter
-is making: everything needed to advance the context is in the context plus the
-one next event. It is not a demand for value semantics. In Go the natural
-implementation is a pointer receiver that mutates in place, and that is the one
-to write. A `Context` containing slices, copied by value on every event, gives
-two contexts sharing one backing array — and the bug that produces looks
-exactly like renderer non-determinism (E3), which is a cruel thing to debug in
-the same chapter that grades byte-identical replay.
+That notation describes **information flow**. It is the chapter's central
+claim: everything needed to advance the context is in the context plus one
+event. It is *not* a demand for value semantics. In Go the natural
+implementation is a pointer receiver mutating in place, and that is the one to
+write — a `Context` full of slices copied by value gives you two contexts
+sharing one backing array, and that bug is indistinguishable from renderer
+non-determinism (§2.7).
 
-**Actors, defined** (this chapter is where the book defines them): an actor
-is a **persistent, stateful** entity with an identity that outlives any
-single message — a name, a mailbox of ordered incoming events, state, and
-behavior. Humans, agents, tools, and automation are all actors. Actors are
-the unit of attribution (every event has one), of addressing (§2.5 rooms),
-and of statefulness (§2.8 deployment). Actors are stateful, not stateless —
-the deployment consequences land in §2.8.
+**Classification is the reducer's job, not the capture site's.** The same
+arriving bytes mean different things depending on turn state. Decide at capture
+time and you are wrong every time the human types quickly. Only the reducer
+holds the state that makes the decision correct. (Chapter 4 makes this vivid:
+the *same* event is a prompt or a hint depending solely on turn state.)
 
-**Every event has an actor:**
+### The taxonomy for this chapter
 
-```go
-type Actor struct {
-    Kind ActorKind  // Human | Agent | System | Tool
-    ID   string     // "bill", "fred", "parent", "scheduler", "run_command"
-}
-```
+`MessageReceived`, `RequestSent`, `ResponseStarted`, `ResponseEnded`,
+`ToolCalled`, `ToolReturned`, `Redacted`, `ErrorOccurred`.
 
-Human and Agent messages obey the same reducer rules (a parent agent's
-mid-turn message is a hint by the same mechanism). System is the automation
-actor ("time to do a handoff", watchdog, scheduler) — first-class, never
-the engine impersonating a user.
+Chapter 4 adds `Interrupted`. Chapter 3 adds job events. **Additive, always** —
+this is the first place the write-once discipline is visible to the reader.
 
-**Content is parts, never a string** (two orthogonal axes: event type =
-semantic role; parts = media):
+Two notes:
 
-```go
-type Part interface{ isPart() }
-type TextPart  struct{ Text string }
-type ImagePart struct{ MediaType string; Hash BlobRef }  // png, jpeg, gif, webp
-type AudioPart struct{ MediaType string; Hash BlobRef }
-```
+- **A single `ErrorOccurred`.** Infrastructure errors change turn state;
+  semantic errors (a tool that ran and failed) are ordinary tool *content*.
+  Conflating them is why agents get stuck retrying a compile error as though it
+  were a network outage.
+- **Thinking text is log-only.** The context carries opaque vendor replay
+  material — a signature, a redacted block, an id — and the renderer decides
+  whether that vendor wants it back. Never reconstruct reasoning as prose and
+  feed it to a different vendor as though it were your own.
 
-New media = new Part kind. Zero new event types, zero new methods.
-(Sidebar: an earlier CodeRhapsody grew `SendUserMessageToAI` →
-`...WithImages` → `...WithMedia` — the combinatorial API explosion that
-happens when content is string-shaped. The migration to parts deleted two
-methods and a class of bugs.)
+### Tool events without a tool loop
 
-**Taxonomy v0** (names will evolve with the book, per ruling):
+Chapter 2 executes no tools. It **renders logs that contain tool events**,
+supplied by the exercise. The student therefore writes a reducer that handles
+events it cannot yet produce.
 
-Dialogue events (accumulate into context):
-- `MessageReceived{actor, parts}` — any non-model actor speaks
-- `AssistantMessage{parts}` — the model's output (models emit images/audio
-  now too; don't bake 2024 into the name)
-- `AssistantThought{parts, signature}` — extended thinking. Two-consumers
-  rule applied: the thinking text/summary lives in the LOG for the GUI —
-  it does NOT enter the context, because the model never sees its own past
-  thinking back. What the reducer folds into the context is only the
-  vendor's opaque REPLAY MATERIAL (Anthropic: signed thinking block,
-  replayed within the current tool loop; Gemini: encrypted thought
-  signature) — renderer-bound vendor quirks, quarantined per §2.6
-- `ToolCalled{call_id, name, args}` — args are structured JSON, not media
-- `ToolReturned{call_id, parts, is_error}` — tool output IS media
-  (read_file on a PNG, screenshot); `is_error` marks semantic failure the
-  model must see (§2.4)
+That is not an accident of sequencing; it is the write-once discipline in
+miniature, and it is worth saying so. You are building the shape before the
+capability, because the shape is what determines whether the capability can be
+added without a rewrite.
 
-Control events (change what the context is):
-- `Interrupted{}` — see state machine
-- `RequestSent{code_commit, request_hash}` — the round-trip boundary;
-  consumes ephemera; see §2.7
-- `ResponseEnded{stop_reason, usage}` — usage is money, recorded in the log
-- `ErrorOccurred{source, code, message, related_seq}` — errors carry their
-  ORIGIN: `Source ∈ {Provider, Renderer, Tool, Engine}`, a machine-readable
-  code ("429", "ETIMEDOUT", "unknown_event_type"), human-readable text, and
-  the seq of the event the error pertains to (the RequestSent, the
-  ToolCalled). One event type, source enum — the reducer switches on
-  source; totality holds per (state, source) pair. Control event: changes
-  state, contributes zero content.
-- `EphemeraSet{instruction, parts}` — REPLACES prior ephemera (volatility
-  is reducer semantics, not a storage hack)
-- `Redacted{target_seq}` — the decision is itself an auditable event;
-  replay reproduces its effect exactly
-- `ModelChanged{model}`, `SystemPromptChanged{...}` — policy is state too
-- Session event: binary (re)attached to the log with a new code commit
+### Turn states
+
+`Idle`, `InputPending`, `InFlight`, `ToolsPending`. (`Interrupted` arrives in
+Chapter 4 — and it must be a *state*, not a flag, or replay re-executes tool
+calls that were cancelled.)
+
+| transition | result | note |
+|---|---|---|
+| Idle × MessageReceived | InputPending | ordinary prompt |
+| InputPending × RequestSent | InFlight | |
+| InFlight × ResponseEnded (tool calls) | ToolsPending | |
+| InFlight × ResponseEnded (no tool calls) | Idle | turn complete |
+| ToolsPending × ToolReturned (last) | InputPending | loop continues |
+| InFlight × ErrorOccurred | Idle | infrastructure failure ends the turn |
+
+**Every pair not listed is identity.** That sentence, not the length of the
+table, is what makes the reducer total. A table enumerates the transitions we
+thought of; the default covers the ones we did not. Write it as the `default`
+arm of the switch, **not** as a `panic`.
+
+---
 
 ## §2.4 The context
 
-Vendor-independent. NO vendor rules contaminate it — canonical example in
-§2.6 (interrupt + dangling tool calls).
+The context is **vendor-independent by construction**, and this chapter is the
+only one that can prove it.
 
-**Turn-state machine:**
+Contents: the dialogue (ordered, actor-attributed, parts-structured), pending
+ephemera, redaction state, token accounting, and opaque per-vendor replay
+material carried but never interpreted.
 
-```
-Idle          — no turn open
-InputPending  — input arrived, no request sent (also: retry posture after
-                transport error). NOT a commitment to respond.
-InFlight      — RequestSent, awaiting response events
-ToolsPending  — response ended in tool_use; results accumulating
-Interrupted   — turn killed; late events APPEND but execute nothing
-```
+**Content is Parts, not a string.** Text, tool calls, tool results, images,
+audio, and vendor-opaque blobs. A string is the Chapter 1 mistake wearing a
+struct.
 
-Key transitions:
+### The system prompt is rendered, not stored
 
-| state × event | → | note |
-|---|---|---|
-| Idle × MessageReceived | InputPending | classified: prompt |
-| InputPending × MessageReceived | InputPending | input accumulates (rooms) |
-| InFlight × MessageReceived | InFlight | classified: hint |
-| ToolsPending × MessageReceived | ToolsPending | classified: hint — a human types while tools are running |
-| InputPending × RequestSent | InFlight | engine decided to respond |
-| InFlight × ResponseEnded(end_turn) | Idle | |
-| InFlight × ResponseEnded(tool_use) | ToolsPending | |
-| ToolsPending × ToolReturned | ToolsPending | engine sends next RequestSent when drained |
-| InFlight × ErrorOccurred(Provider) | InputPending | retry posture; model never hears of a cured 429 |
-| InFlight × Interrupted | Interrupted | canonical case |
-| ToolsPending × Interrupted | Interrupted | after_tool: in-flight tools drain here |
-| Interrupted × ToolCalled | Interrupted | **recorded, never executed** — truth without action |
-| Interrupted × ResponseEnded | Idle | dead turn fully drained |
-| Interrupted × Interrupted | Interrupted | no-op, defined |
-| Idle × Interrupted | Idle | no-op, defined — nothing to kill |
+*The inoculation. It teaches no prompt content and prevents the most common
+architectural mess in the field.*
 
-**Every pair not listed is identity.** That sentence, not the length of the
-table, is what makes the reducer total. A table can only ever enumerate the
-transitions we thought of; the default is what covers the ones we did not.
-Write it as the `default` arm of the switch, not as a `panic`.
+The system prompt is **output of the renderer**, computed from context plus
+configuration. It is not a blob of text living in the log, and it is not a
+field on the context that someone appends to.
 
-Proof `Interrupted` must be a state: without it, tool calls arriving after
-an interrupt are indistinguishable from a live turn's, and the
-self-contained reducer would start executing them.
+For now, a constant string is a perfectly good renderer. The rule is only about
+**where it comes from**.
 
-**Errors split in two, and the split is the lesson:**
-- *Infrastructure* errors (`ErrorOccurred` — provider 429/timeout, renderer
-  refusal, engine faults) change **state** (Provider: → InputPending),
-  enter the log for audit with source + code + related_seq, contribute
-  zero content.
-- *Semantic* errors (tool ran and crashed) change **content**: a
-  `ToolReturned{IsError: true}` whose parts say "exit 1, stderr: ..." —
-  the model must see it. (`IsError` maps to Anthropic's `is_error`; the
-  renderer never infers failure from prose.)
-- Boundary case proving the split: a tool that couldn't even START (not
-  found, sandbox denied) still emits `ToolReturned{IsError: true}` — the
-  model has a dangling call awaiting a result — plus optionally
-  `ErrorOccurred{Source: Tool}` carrying the infra detail for audit,
-  linked by related_seq.
+Why this matters enough to state before we need it: the system prompt is the
+most abused surface in agent engineering, and the abuse has a predictable
+shape. First someone describes the tools in it by hand. Then the descriptions
+drift from the actual tools. Then part of it is generated and part is
+hand-written, and no one can say which. By the time it is 400 lines nobody will
+delete a word, because nobody can prove which words are load-bearing.
 
-## §2.5 Multi-party: rooms
+Chapter 6 replaces the constant with generation from skills. Under write-once
+that must be a pure addition — and it is, **provided the system prompt was
+never a stored value in the first place.**
 
-- `Actor.ID` distinguishes Bill from Fred. Concurrent senders serialize
-  into one ordered thread; seq ordering IS the multi-party semantics.
-- The reducer is sender-agnostic: Fred mid-turn is a hint; Fred while idle
-  accumulates input. No per-actor special cases.
-- **A conversation is a room. There is no `To` field.** Everyone in the
-  room hears everything; whispering is a *different room* (a different
-  conversation), not a flag on an event. Routing belongs to the mailbox
-  layer, outside the log.
-- Room-awareness: input accumulates in InputPending; the ENGINE decides
-  whether/when to respond (emit RequestSent). Use case: Discord voice
-  transcription during gameplay — the LLM stays informed of the whole room
-  and infers from context whether it's expected to speak ("Fred says ...").
+The three vendors make the point concrete before the reader can form a bad
+habit: Anthropic takes a top-level `system` parameter, OpenAI takes a `system`
+(or `developer`) message inside the array, Gemini takes a separate
+`systemInstruction` object. One fact; three placements; a renderer's problem.
+Store it and you have just picked a vendor.
 
-## §2.6 The renderer
+---
 
-- One-way: Context → vendor JSON at request time. Responses parsed into
-  events at the boundary; vendor types never leak inward.
-- All of Chapter 1's "architecture" reappears here, demoted to one
-  backend's quirks: role derivation, alternation rules, system placement.
-- **Attribution policy** (per ruling): renderer's decision. Anthropic
-  default: solo human renders as plain "user" with no ID; otherwise the
-  renderer inserts sender metadata into the user content ("Fred says ...").
-- **The canonical vendor-quirk example**: interrupt arrives while a
-  response with tool calls is in flight. The log shows Interrupted BEFORE
-  ToolCalled. The context truthfully holds an assistant message with
-  dangling tool calls, state Idle, new user prompt arriving — which is
-  ILLEGAL Anthropic JSON. That's Anthropic's quirk, and the Anthropic
-  renderer eats it. Two policies discussed: strip the dangling tool_use
-  blocks, or synthesize `tool_result: "interrupted by user"` blocks
-  (proposed default — the model behaves better when it knows it was cut
-  off). Renderer policy; zero contamination of the context.
-- Media asymmetry is a renderer property: an audio part sent to a
-  text-only model is a LOUD error, never a silent drop (no-fallbacks
-  discipline).
+## §2.5 Actors and rooms
 
-**Show the reader what actually comes out.** The abstract description above
-under-sells how strange the result looks, and students will meet this JSON in
-their own output:
+Actors: `Human`, `Agent`, `System`, `Tool`. Rooms group a conversation. There
+is deliberately **no `To` field** — addressing is a property of the room, not
+of the message, and adding `To` invites a routing layer the book does not want.
+
+The `Tool` actor looks like over-modelling until §2.6, where it becomes the
+single sharpest demonstration in the chapter. Hold that thought.
+
+---
+
+## §2.6 The seam — renderers and parsers
+
+**The centerpiece.** Everything before this exists to make this section
+possible.
+
+> The context is the truth. A **renderer** turns truth into one vendor's
+> request. A **parser** turns one vendor's response back into truth.
+> Distortion lives in those two places and nowhere else.
+
+The seam is **bidirectional**, and rendering is the easy half. `AIClientInterface`
+did not fail because request formatting was hard; it failed because
+vendor-shaped thinking hid in the response path, in retries, in errors, in
+streaming, in token accounting.
+
+### Exhibit A — one tool result, three authorships
+
+The demonstration the chapter is built around. A single `ToolReturned` event,
+`Actor: Tool`, rendered three ways.
+
+**Anthropic** — a `tool_result` block inside a **user** message:
 
 ```json
-{
-  "role": "user",
-  "content": [
-    {
-      "type": "tool_result",
-      "tool_use_id": "toolu_...",
-      "content": "interrupted by user"
-    },
-    {
-      "type": "text",
-      "text": "stop poking at that and check the config instead"
-    }
-  ]
-}
+{ "role": "user",
+  "content": [ { "type": "tool_result", "tool_use_id": "toolu_…",
+                 "content": "ok" } ] }
 ```
 
-A synthesized answer to a question the human never let finish, and the human's
-next instruction, **merged into a single message** — because Anthropic will not
-accept two user messages in a row. Nothing in the context looks like this. The
-context holds an interrupt, a dangling tool call, and a new prompt, each a
-separate honest fact in sequence. The merge exists solely because one vendor's
-wire format demands alternation. That is the whole of §2.6 in one object: the
-distortion lives in the renderer and dies there.
+**OpenAI** — its own message with a **tool** role:
 
-## §2.6a Real-time hints — steering an agent mid-turn
+```json
+{ "role": "tool", "tool_call_id": "call_…", "content": "ok" }
+```
 
-*(Author note: likely renumbers to §2.7 when prose is written. Placed here
-deliberately — it is the renderer section's payoff and must follow it.)*
+**Gemini** — a `functionResponse` part in a **user** turn:
 
-The agent is three tool calls into a refactor and heading somewhere you don't
-want it to go. You type: *"stop, the bug is in the parser."* Those words reach
-the model **during** the current turn — not after it finishes, not as the next
-question. The agent pivots mid-chain, without the tool chain breaking.
+```json
+{ "role": "user",
+  "parts": [ { "functionResponse": { "name": "…", "response": { … } } } ] }
+```
 
-This is the capability Chapter 1 §1.1 named first when it argued that
-frameworks hard-code delivery. Here the student builds it.
+Three vendors cannot agree on who said it. Anthropic says the human did — which
+is false, and is the tidiest available lie under a format that demands strict
+user/assistant alternation. OpenAI invents a role. Gemini splits the
+difference.
 
-**Why this chapter needs one tool.** A hint is a message that arrives *during*
-a turn — so a turn has to be long enough to have a middle. With no tools a
-turn is a single round trip: request, response, done. There is no middle, and
-mid-turn steering degenerates into "your next question." That is why the
-exercise hardcodes exactly one trivial tool (`agent_status`, below). It is
-not a tool chapter; it is the smallest possible thing that makes a turn last
-long enough for a human to interrupt it.
+**The context is right and all three wire formats are compromises, in different
+directions.** That is the entire argument for the seam, and it is not an
+analogy — the student will watch one `Actor: Tool` event become three different
+claims about authorship, and none of the three is worth storing.
 
-**The demonstration.** The model calls `agent_status`. You return the status.
-It calls it again. And again — a loop that will happily run until something
-stops it. Mid-loop, you type:
+Corollary, and the reason §2.5 models a `Tool` actor at all: **authorship is a
+rendering decision.** If your context stores `role: "user"` for a tool result
+because that is what Anthropic wanted, you have already lost, and you will
+discover it in the copy-paste.
 
-> **please stop**
+### Exhibit B — the merged message
 
-The words reach the model *inside* the turn, attached to the very next tool
-result. The loop ends. You did not kill the process, you did not wait for
-your turn — you steered a running agent, and you built every part of the path
-those words travelled.
+Anthropic will not accept two consecutive user messages. So a tool result plus
+the human's next instruction merge into one message:
 
-In the REPL, try **"Please speak like a pirate"** mid-turn instead, and watch
-the rest of the turn come back in pirate. Same mechanism, more fun, and it
-makes the timing vivid: everything before the hint is normal, everything
-after is piratical, in a single unbroken turn.
+```json
+{ "role": "user",
+  "content": [
+    { "type": "tool_result", "tool_use_id": "toolu_…", "content": "ok" },
+    { "type": "text", "text": "now check the config instead" }
+  ] }
+```
 
-**Provenance.** As far as we can determine, this book's author and his agent
-invented this in **July 2025** — the first known implementation of mid-turn
-human steering in an agentic loop. It came from noticing that the Messages API
-would accept a user `text` block in the *same message* as `tool_result`
-blocks, which meant there was a place to put words that the model would read
-before deciding its next move. Frontier products have since shipped
-steering in their own UIs, and the API has since grown a first-class mechanism
-for it (below). *(Publication note: the priority claim is the author's, dated
-and falsifiable. Verify before print; "as far as we can determine" stays
-either way.)*
+Nothing in the context looks like this. Two honest, separate, ordered facts,
+fused because one vendor demands alternation. Render the same log for OpenAI
+and they stay separate. The merge is not a fact about the conversation; it is a
+fact about a wire format, and it belongs in exactly one function.
 
-### Why it belongs in this chapter, and not in the chapter about tools
+### Exhibit C — parsing back
 
-Because the hard part is not the network call — it is that a hint is
-**the same event as a prompt, distinguished only by state.**
+Three response shapes normalize to identical context:
 
-§2.3's reducer table already says so: `InFlight × MessageReceived → InFlight`,
-classified as a hint. There is no `Hint` event type and there must not be one.
-The identical bytes typed by the identical human are a *prompt* when the turn
-is `Idle` and a *hint* when it is `InFlight`. Only the reducer knows which,
-because only the reducer holds the state. Classify at capture time and you
-will be wrong every time the human types fast.
-
-The second half is delivery, and delivery is the **renderer's** problem —
-which is what makes this the cleanest demonstration of §2.6's rule. The
-context records a fact about the conversation: *a hint is pending, not yet
-carried to the model.* It does not record how to carry it. That separation is
-not an aesthetic preference; it is load-bearing, because there are currently
-**two** ways to carry a hint and which one you use depends on the model:
-
-| carriage | how it is carried | availability |
-|---|---|---|
-| **Mid-turn `system` message** | a `{"role":"system"}` entry inside `messages`, placed after the current tool results | accepted by every current Claude model we have tested, `claude-sonnet-5` and `claude-opus-4-8` included |
-| **The appended text block** (the original 2025 hack) | the hint as a `text` block placed **after** the `tool_result` blocks in the same user message | everywhere, by construction — it is an ordinary user message |
-
-Both are legal, both steer the model, and **the renderer chooses**. Notice what
-supporting both costs: a renderer that knows which carriage it is using, and a
-context that never had to care. Put the carriage decision inside your HTTP
-code, where it will feel natural, and you can serve exactly one shape of model.
-
-> **A note on what this table used to say.** An earlier draft claimed the
-> mid-turn `system` message worked on `claude-opus-4-8` and newer but *not* on
-> `claude-sonnet-5`, and that the hack cost you a round of lag. Measured
-> against the live API, that is wrong on both counts: `claude-sonnet-5`
-> accepts the mid-turn `system` entry and obeys an instruction that appears
-> nowhere else in the request, and both carriages steer the model on the very
-> first response after the hint is carried. The lag was real. It was not where
-> we thought. Chasing it down is the rest of this section — and the reason the
-> table above deliberately does not tell you which models support what. Any
-> such table is a fact about one week in the history of an API. The mechanism
-> below outlives it.
-
-**The ordering is load-bearing.** In the hack, the hint text goes *after* the
-tool results in the message. A hint placed before them reads as a comment on
-nothing — the model has not yet seen what it is being steered about. This is a
-real rule with a real failure mode, it is graded, and it is the reason
-`agent_status` had to exist at all: an ordering rule needs two things to order.
-
-**A pending hint is not in the dialogue yet.** This is the one place where a
-student who has understood everything else will still fail, so it is worth
-being slow and explicit.
-
-Look at the timing. The hint arrives *during* request N — that is the
-definition of a hint. But it must be carried *after the tool results* of
-request N+1, and at the moment it arrives, those results **do not exist yet**.
-In `Seq` order, the hint sits before the `ToolCalled` and `ToolReturned` events
-of the very message it is supposed to follow.
-
-So the obvious, correct-sounding thing — play the log in order, render the
-dialogue in order — puts the hint in the wrong place. The student's reducer is
-right. Their renderer is right. Their reading of §2.2 is right. The result is
-wrong.
-
-The resolution is §2.6's rule paying for itself in cash:
-
-> A pending hint is **not in the dialogue**. The context records only that a
-> hint is *pending*. The renderer places it at the end of the final user
-> message of whichever request carries it — and `RequestSent` is the event
-> that moves it into the dialogue, at that same end position. From that moment
-> it is ordinary history and never moves again.
-
-That single decision buys three things at once: the hint lands in the right
-position on delivery, the history is stable afterwards (which prefix caching
-will demand in a later chapter), and replay puts it in exactly the same place
-every time.
-
-**Render, then record.** A direct corollary, and worth stating as a rule
-because the failure is so well disguised: the request is rendered **first**,
-and `RequestSent` is recorded **after**. Rendering is what *carries* the
-pending hint and the pending ephemera; `RequestSent` is what *consumes* them.
-Do it in the other order and the hint goes out one round late — which is
-indistinguishable, from the outside, from a model that lags. A student who hits
-this will blame the vendor. It is in their own engine, four lines apart.
-
-**A hint is history, not ephemera.** This is the distinction students most
-reliably get backwards, and the two graded properties need saying precisely,
-because read casually they contradict each other:
-
-- **Delivered once** means the hint appears **at most once within any single
-  request** — not duplicated inside a request, and not re-attached as a *fresh*
-  delivery on each subsequent round.
-- **Retained** means that once delivered it stays in the dialogue, and is still
-  there in a request sent many turns later.
-
-Both are true simultaneously because the hint becomes an ordinary part of a
-user message, and history is re-sent in full every round (§2.1). Its words
-therefore *do* appear in every later request, forever — and that is not the
-ephemera mistake, that is the definition of retention. Contrast a stale
-timestamp, which must vanish after one delivery because on the next round it
-is simply a lie. **A hint is delivered once and remembered always.**
-
-**What actually determines responsiveness.** Here is the mechanism the model
-table cannot give you:
-
-> A hint is carried by **the next request the engine sends**. Anything that
-> delays that request delays the steer.
-
-That reframes the question from "which carriage?" to "what is my engine doing
-right now?", and there are only three answers:
-
-1. **A response is already in flight when you type.** Irreducible. The HTTP
-   request has left; nothing can overtake it. You wait for that one response.
-   No carriage fixes this, and no carriage needs to — it is one response, not
-   one round.
-2. **No further request is coming.** If the turn is ending, there is no next
-   request to carry anything, and the hint becomes what it always was for a
-   plain chatbot: your next message.
-3. **The engine cannot hear you while it works.** This is the big one, and it
-   is the one that masquerades as vendor lag.
-
-That third case is measurable. Patch the chapter's one tool to sleep fifteen
-seconds and type a hint five seconds in:
-
-| carriage | hint typed | hint *received* | mailbox blackout |
+| vendor | assistant text at | tool calls at | stop signal |
 |---|---|---|---|
-| appended text block | t+5.0s | t+16.4s | **+11.4s** |
-| mid-turn `system` | t+5.0s | t+16.3s | **+11.3s** |
+| Anthropic | `content[]` blocks | `tool_use` blocks | `stop_reason` |
+| OpenAI | `choices[0].message.content` | `.tool_calls[]` | `finish_reason` |
+| Gemini | `candidates[0].content.parts[]` | `functionCall` parts | `finishReason` |
 
-Identical, because the delay is not in the API at all. It is in the engine: if
-tools execute on the same goroutine that drains the mailbox, then for the whole
-duration of a tool the actor is **deaf**. Both carriages then deliver on the
-first request after the tool returns, promptly and equally.
+The grader's real question: **feed all three responses, get byte-identical
+contexts.** Anything that differs is vendor shape that leaked past the parser —
+and leaked vendor shape is precisely what makes the second implementation a
+copy-paste.
 
-(These are single runs against one vendor on one day, quoted to show a shape,
-not to characterise a model. Re-measure before you trust any digit here.)
+Also normalized here: token accounting (`usage.input_tokens` /
+`prompt_tokens` / `usageMetadata.promptTokenCount`), and errors — an HTTP 429
+is an `ErrorOccurred`, not a response.
 
-Which lands us somewhere better than a compatibility table. An actor whose
-mailbox goes deaf whenever it does work does not really have a mailbox — it has
-an inbox it checks between chores. Chapter 2's tool is instant, so the chapter
-cannot show you this failure. Chapter 3's tools are not, and that is when the
-mailbox starts to earn its keep.
+### Rules the seam has to hold
+
+- **Decline vendor stateful conversation APIs.** Server-side threads (or
+  `previous_response_id`-style continuations) trade away the ability to edit
+  history. Editing history is a coding agent's core tool: redaction, replay,
+  context surgery. Own the history or you cannot build the product.
+- **Media asymmetry is a LOUD error.** An audio part rendered for a text-only
+  model raises; it never silently drops. Fallbacks convert an invariant
+  violation into silently-wrong output.
+- **Opaque replay material is carried, never interpreted.** Thinking
+  signatures, tool-use ids, cache markers: store them, hand them back to the
+  vendor that issued them, and never to a different one.
+- **The context never learns a vendor's vocabulary.** If the word `assistant`,
+  `toolu_`, or `functionCall` appears in your context types, the seam has
+  already leaked.
+
+### The prediction the chapter makes out loud
+
+The second renderer costs real work. **The third should be nearly free.** If it
+is not, the seam is wrong — and the reader will discover that in an hour
+instead of in 30,000 lines.
+
+This is the chapter's falsifiable claim about its own design, and students
+should be told to notice whether it holds for them.
+
+---
 
 ## §2.7 Versioning and replay
 
-- **Replay-with-current-code**: replaying the log through today's reducer +
-  renderer. We do not version reducers.
-- **The semver contract on reducer semantics**: within a major version,
-  replay is sacred — additive evolution only (new event types allowed; the
-  transition semantics of existing types are FROZEN); every old log plays
-  to the identical state. Across major versions, replay may break, loudly
-  and deliberately. **Caveat (ruling): 0.x.x promises nothing** — replay
-  compatibility begins at 1.0. Students live on 0.x all semester; the
-  discipline is the lesson, not the guarantee.
-- Evidence over promises (C's history of reinterpreting "the same code"
-  justifies paranoia): `RequestSent{code_commit, request_hash}` — git
-  commit (SHA-256 object format) + sha256 of the rendered request bytes.
-  Drift is detectable AND attributable. A session event records each binary
-  (re)attach, so mid-conversation upgrades are visible history.
-- **Unknown event type ⇒ refuse to load, loudly** — name the event type
-  and the commit that wrote it. Silently skipping an event would produce a
-  context that is subtly wrong while claiming replay-exactness (the
-  `void* /* generator */` of conversation formats).
+- Replay with **current code**, not with historical code. Log format carries a
+  semantic version.
+- **An unknown event type is a refusal to load, loudly.** Not a skip. Skipping
+  an unknown event silently produces a context that is wrong in a way nothing
+  downstream can detect.
+- Retention is **policy**, not architecture: the log is complete; what you keep
+  is a separate decision.
 
-## §2.8 Actors are stateful — deployment follows the data structures
+**Four ways non-determinism gets into a renderer**, named because the failure
+message only tells you *that* two renders differed: the clock, a randomly
+generated id, Go's deliberately randomized map iteration order, and iteration
+over a set. The last two are the same bug in different hats, and they are why
+wire types should be structs with ordered fields rather than `map[string]any` —
+the map serializes differently on some future run, on some future machine, and
+never on the one where you tested.
 
-- The context is live, expensive-to-rebuild state. Where it LIVES is a
-  property of the data structures, not a free deployment choice.
-- Two topologies seen in the wild:
-  1. **Stateless workers**: every message rehydrates the full conversation
-     from durable transactional storage, processes, writes back. (Some
-     frameworks require this.)
-  2. **Stateful actors** (ruling: preferred): the conversation lives in
-     memory on one server; the load balancer routes a conversation's
-     messages consistently to the same machine.
-- Why stateful wins: no per-message rehydration cost — and, decisively,
-  **ancillary local state**. Example: a tool result too large for the
-  context is not dropped; it's kept on local disk, a stub goes in the
-  context, and the LLM can scan the full output later via tool calls. With
-  random routing, the file is on the wrong machine and this pattern —
-  one of the most valuable in a real coding agent — becomes a distributed-
-  systems problem.
-- **Actors persist. They migrate, and migration is hard** — snapshot the
-  context + blob table + ancillary files, move, reattach — but that is the
-  primitive worth building, not a reason to go stateless.
-- Local single-machine deployment (how this course builds) is the
-  degenerate case where stickiness is free. The cloud consequences are
-  named here so the student knows what the local design is secretly
-  deciding.
+---
 
-## Exercise (auto-graded, Go, fake Anthropic server)
+## §2.8 The exercise
 
-Rebuild the Chapter 1 chatbot on the real structures. For everything
-Chapter 1 could already do it is **observably identical from the outside** —
-same REPL, same stdio contract, same answers — which is the lesson: the
-rewrite bought properties, not features.
+### Commands
 
-Then it does two things the Chapter 1 program could not have expressed at
-any price: it accepts a **hint** mid-turn, and it survives an **interrupt**.
-Both were impossible before, and neither needed a new idea — they fell out of
-the structures. That is the argument of this chapter in one sentence.
-
-**Exactly one tool, and it is not a tool system.** Chapter 3 builds the tool
-loop properly. This exercise hardcodes a single zero-argument tool,
-`agent_status`, which returns a small JSON object describing the
-conversation's own state — the highest `Seq` in the log and the current turn
-state. It is deliberately self-referential: the agent's one capability is to
-look at the structure you just built.
-
-It exists because **without a tool, a turn is one round trip, and there is no
-"mid-turn" to steer into.** The fake drives `agent_status` in a loop — calling
-it again, and again — which is what gives you a long turn with a human-shaped
-window in the middle of it. Its return value must be a deterministic function
-of the log, because `replay` demands byte-identical renders. It returns
-something as small as this:
-
-```json
-{"highest_seq": 41, "turn_state": "ToolsPending"}
-```
-
-What you are *not* building: a tool registry, a dispatch table, schemas,
-argument validation, or error plumbing. One `if` statement on the tool name is
-the correct amount of machinery here. **You do still declare the tool in the
-request** — a real Messages API never emits a `tool_use` for a tool the request
-did not advertise, and a submission that omits the `tools` array is relying on
-the fake's good manners rather than on the protocol. The declaration is three
-hardcoded lines. "No registry" means no machinery for *managing* tools, not
-the absence of the field that makes the one tool legal.
-
-### The problem this section exists to solve
-
-Chapter 1's review taught a lesson at the author's expense: **an exercise
-spec that a grader cannot be built from is not a spec.** Four of that
-chapter's seven graded properties were never stated, and competent students
-would have failed for reasons the chapter never mentioned.
-
-Chapter 2 is worse in kind, not degree. "The grader scripts an interrupt
-between rounds" presumes a wire format for interrupts that does not exist.
-"Two invocations fed the same event log" presumes a log serialization and a
-way to feed it, neither of which exists. Those are specified below.
-
-### Surfaces the submission must expose
-
-Three, and the last two are new this chapter:
-
-| invocation | behavior |
+| command | behaviour |
 |---|---|
-| `./ch02` | grader mode — stdio JSON-lines (the default, as in Chapter 1) |
-| `./ch02 chat` | the REPL |
+| `./ch02 chat` | Chapter 1's interactive loop, unchanged in observable behaviour |
 | `./ch02 render LOG` | play `LOG` → context → render; print the vendor request JSON that *would* be sent to stdout, and **nothing else on stdout**; exit `0`. **Makes no network call.** |
+| `./ch02 dump` | write the event log as JSON-lines |
 
-`render` is the centerpiece. It exposes
-`EventLog → Context → vendor request` as a pure function on the command
-line, which turns three otherwise-awkward properties — replay determinism,
-redaction, ephemera — into mechanical byte comparisons that need no server
-at all. If your architecture cannot offer this subcommand cheaply, your
-context is not actually separate from your transport, and that is the
-finding the exercise is designed to surface.
+`render` is the centerpiece: it makes replay, redaction, ephemera and the seam
+into **byte comparisons**, and it proves context is separable from transport.
+If your architecture cannot offer it cheaply, your context is not actually
+separate from your transport — which is the finding the exercise exists to
+surface.
 
-`render` takes **no flags**. The model id and any other request parameters
-come from the environment, exactly as they do in grader mode. This is not
-fussiness: two `render` invocations are compared byte for byte, so the moment
-rendering accepts a `--model` or a `--max-tokens`, byte-identity becomes a
-property of *how you invoked the command* rather than a property of the log.
-The log is supposed to be the whole input. Keep it that way.
-
-### Control directives (extends the Chapter 1 stdio protocol)
-
-The grader writes one JSON object per line. `{"user": ...}` behaves exactly
-as in Chapter 1 and expects exactly one `{"assistant": ...}` reply. Every
-other object is a **directive** and expects exactly one `{"ok": true}`
-acknowledgement line.
-
-| directive | event injected |
-|---|---|
-| `{"interrupt": true}` | `Interrupted{}` |
-| `{"hint": "..."}` | `MessageReceived` — arrives while a turn is in flight, so the reducer must classify it as a hint |
-| `{"redact": <seq>}` | `Redacted{target_seq}` |
-| `{"ephemera": {"instruction": "...", "text": "..."}}` | `EphemeraSet` |
-| `{"dump": "<path>"}` | none — serialize the event log to `<path>`, flush, then ack |
-
-The `hint` directive is the one that tests whether you built a conversation
-or a request builder. The grader sends it **mid-loop** — while the fake is
-driving `agent_status` and your program is blocked on an HTTP call it has
-already sent. The line arrives on stdin at a moment when a round-synchronous
-program is not listening. If you can only read stdin between rounds you
-cannot even receive this directive, let alone act on it. §2.5 already told
-you the answer: an actor has a mailbox.
-
-The grader's hint is **"please stop"**, and the fake enforces the whole
-contract behaviorally: it keeps calling `agent_status` until it sees that
-text correctly delivered, and then stops. A submission that drops the hint,
-delivers it in the wrong position, or saves it for the next round keeps the
-loop running — and the loop running is itself the failure, visible without
-reading a single check name.
-
-*(In the REPL, students should try **"Please speak like a pirate"** instead.
-Same path, and the turn audibly changes character halfway through.)*
-
-Directives are acknowledged rather than silent for the same reason Chapter 1
-demands one answer per round: it keeps the stream synchronous, so a hung
-submission produces a located failure instead of a bare timeout.
+`render` takes **no flags**. Vendor target, model id and every other request
+parameter come from the environment (`LLM_VENDOR=anthropic|openai|gemini`),
+exactly as in grader mode. Two renders are compared byte for byte, so the
+moment rendering accepts `--model`, byte-identity becomes a property of how you
+invoked the command rather than of the log.
 
 ### Log serialization
 
-JSON-lines, one event per line, ascending `Seq`. Each line carries at
-minimum `seq`, `type`, and the event's own fields; dialogue events carry
-`actor`. The format must round-trip: `dump` → `render` must work in a fresh
-process with no other state. Blobs may be inlined or written beside the log,
-your choice, as long as `render` needs nothing but the path it is given.
+JSON-lines, one event per line, ascending `Seq`. Each line carries at minimum
+`seq`, `type`, and the event's own fields; dialogue events carry `actor`. The
+format must round-trip: `dump` → `render` must work in a fresh process with no
+other state.
 
-**The event-type vocabulary is frozen for this exercise.** §2.3 says the
-taxonomy is v0 and will evolve with the book — true, and it does not apply
-here. Three checks (`interrupt`, `redaction`, `usage`) assert on the
-*contents* of your dumped log: that an `Interrupted` event exists, that a
-`ToolCalled` follows it and no `ToolReturned` does, that a `Redacted` event
-names its target, that `ResponseEnded` events carry token counts. None of that
-is possible unless we agree on names. Use the §2.3 set:
+**The event-type vocabulary is frozen for this exercise.** Three checks assert
+on the *contents* of your dumped log, which is impossible unless we agree on
+names. Use the §2.3 set. Spell them as you like: the grader compares type names
+lowercased with punctuation stripped, so `ToolCalled`, `tool_called` and
+`TOOL-CALLED` are the same event, and it does the same for field names. What it
+cannot do is guess that you called it `Halted`.
 
-`MessageReceived`, `RequestSent`, `ResponseStarted`, `ResponseEnded`,
-`ToolCalled`, `ToolReturned`, `Interrupted`, `Redacted`, `ErrorOccurred`.
+### No network calls for two of the three vendors
 
-Spell them however you like. The grader compares type names **lowercased with
-punctuation stripped**, so `ToolCalled`, `tool_called` and `TOOL-CALLED` are
-the same event, and it does the same for field names, so `target_seq` and
-`targetSeq` both resolve. What it cannot do is guess that you called it
-`Halted`. The spelling is yours; the vocabulary is not.
+The grader serves **fake endpoints for all three vendors**, so a full seam can
+be built and graded with a single API key — or none. Students with one vendor
+account are not second-class citizens, and nobody pays three subscriptions to
+finish Chapter 2.
 
-### The checks — 100 points, all must pass
+### Checks
 
 | check | pts | property |
 |---|---|---|
-| `session` | 0 | the stdio protocol was honoured: every directive acknowledged, no unexpected lines on stdout, and a census of every request the fake saw |
+| `session` | 0 | stdio protocol honoured; directives acknowledged; request census |
 | `ch1parity` | 25 | all seven Chapter 1 checks still pass, unchanged |
-| `logdump` | 5 | log serializes and round-trips; `Seq` monotonic, never reused |
-| `replay` | 15 | two separate `render` invocations on the same log emit **byte-identical** requests |
-| `redaction` | 15 | after `Redacted`, the payload is absent from the rendered request and present in the dumped log |
-| `ephemera` | 10 | injected data appears in exactly one request, exactly once, and never in the log's dialogue events |
-| `hint` | 15 | a message arriving mid-turn is received while blocked, classified as a hint, delivered **once**, **after** the tool results, and retained in history thereafter |
-| `interrupt` | 10 | post-interrupt `ToolCalled` events are recorded and **not executed**; the next rendered request is legal Anthropic JSON, and the next message is a prompt, not a hint |
-| `usage` | 5 | cumulative totals derived from `ResponseEnded` events |
+| `logdump` | 5 | log round-trips: `dump` → `render` in a fresh process |
+| `replay` | 10 | two renders of one log are byte-identical |
+| `redaction` | 10 | a `Redacted` event names its target; content absent from later renders |
+| `ephemera` | 10 | delivered exactly once, then absent — and never written to history |
+| `usage` | 5 | token accounting normalized from all three vendors |
+| `seam-render` | 15 | one log renders correctly to all three vendor request shapes |
+| `seam-parse` | 20 | three vendor responses produce byte-identical contexts |
 
-Notes on the ones that carry the chapter's thesis:
+**Sum: 100.**
 
-- **`replay`** is the deep one. It catches wandering timestamps and
-  map-iteration ordering — the exact bug class that later destroys prefix
-  caching, caught here, chapters before caching is mentioned. A log is a
-  fixed input; if two runs of a pure function over a fixed input disagree,
-  something non-deterministic leaked into your renderer.
+Notes on the weighting:
 
-  The leak is worth naming in advance, because the failure message tells you
-  only *that* two renders differed, and hunting a one-byte difference can eat
-  an afternoon. There are essentially four ways it gets in: **the clock**, a
-  **randomly generated id**, **Go's deliberately randomized map iteration
-  order**, and **iteration over a set**. The last two are the same bug wearing
-  different hats, and they are the reason to build your wire types out of
-  structs with ordered fields rather than `map[string]any` — the map will
-  serialize in a different order on some future run, on some future machine,
-  and never on the one where you tested it.
-- **`redaction`** is the pair of assertions that proves History ≠ Context in
-  one line of grader code: gone from one artifact, still there in the other.
-  A design that conflates them cannot pass both halves simultaneously.
-- **`interrupt`** is where the reducer's totality gets tested. The grader
-  interrupts mid-loop and the model's already-issued `agent_status` call
-  still arrives; it must be **recorded and not executed**. That is only
-  expressible if `Interrupted` is a genuine state rather than a boolean
-  someone remembers to check — and a second interrupt on an
-  already-interrupted turn must be a legal no-op, the identity transition
-  §2.3's table promises. The renderer then has to make a context containing
-  an unanswered tool call into legal Anthropic JSON, which is §2.6's rule
-  earning its keep.
+- **`seam-parse` outscores `seam-render`** because parsing is the half where
+  vendor shape actually hides, and the half the author got wrong.
+- **`ch1parity` stays at 25**, honouring the standing guard from Chapter 1's
+  review. Below that, a rewrite that silently breaks Chapter 1's contract
+  starts to look survivable.
+- **`session` is worth zero and can still sink a submission.** Without it, one
+  unacknowledged directive fails four checks at once and the student gets four
+  mysteries instead of one cause.
 
-  **One rule the chapter owes you, because Chapter 1's contract does not
-  cover it.** Chapter 1 required exactly one `{"assistant": ...}` line per
-  `{"user": ...}` line. Chapter 2 kills a turn in the middle — so does that
-  round still owe its line? The rule: **a turn killed by an interrupt produces
-  no `{"assistant"}` line.** A killed turn produced no answer, and saying so
-  is more honest than inventing one. The grader tolerates a line if your
-  design prefers to emit the partial text it did receive, but decide which you
-  are doing on purpose. Get this wrong by accident and your stream
-  desynchronizes against the grader's, turning one defect into a cascade of
-  timeouts that all look like different bugs.
-- **`hint`** is graded on five separable properties, and students typically
-  get four: *received while blocked* (acked mid-loop — proof the program has
-  a mailbox and not a read loop), *classified* (it is a hint, not a prompt,
-  because of **when** it arrived, so it does not start a turn of its own or
-  earn its own `{"assistant"}` reply), *positioned* (after the tool results,
-  never before), *delivered once* (it appears **at most once within any single
-  request** — not duplicated inside a request, and not re-attached as a fresh
-  delivery each round), and
-  *retained* (still in the dialogue ten rounds later, because unlike ephemera
-  it really was said). Either delivery mechanism passes; the grader asserts
-  the property, not the vendor path.
+### What you are not building
 
-  **A known boundary, stated plainly because it undercuts §2.5's own thesis.**
-  This check proves your program stays responsive while blocked on *HTTP*,
-  which is the easier half. It cannot prove your program stays responsive
-  while blocked on *work*. `agent_status` is instant by specification — it has
-  to be, since `replay` byte-compares its output — so a submission that runs
-  its tool on the same goroutine that drains the mailbox passes every check
-  here and still goes deaf for the duration of every real tool it ever runs
-  (§2.6a measures exactly that, at eleven seconds). Chapter 3 runs tools off
-  the engine goroutine, and that is where the mailbox starts to earn its keep.
-  We are not fixing it here, because the fix belongs with the tool loop and
-  this is not the tool chapter.
-- **`session`** is worth zero points and can still sink a submission. It
-  exists because Chapter 2 *extends* the stdio contract — five directives and
-  an acknowledgement — and Draft 2 had no check that the stream itself
-  behaved. Without it, a submission that simply fails to acknowledge a
-  directive fails `logdump`, `redaction`, `ephemera`, `hint` and `interrupt`
-  all at once, and the student gets five mysteries instead of one cause. Zero
-  points keeps the table at exactly 100 without reopening the weighting.
-  *(This adds a check the outline's ruling did not list — flagged for
-  ratification, not slipped in. It could equally carry real points taken from
-  `ch1parity`, which is the thing it most resembles.)*
-- **`ch1parity`** is deliberately worth less than the sum of its parts. The
-  rewrite is not supposed to buy features — it is supposed to keep them while
-  buying properties. *(Reweighted 30 → 25, with `logdump` 10 → 5 and `usage`
-  10 → 5, to fund the `hint` check at 15. The 30/70 ruling's signal is
-  preserved at 25/75; flagging the change because it edits a ruling.)*
+No tool loop — Chapter 3. No mailbox, hints, or interrupts — Chapter 4. No
+streaming, no retries, no skills, no sub-agents. **You are building one context
+and three ways in and out of it.**
 
-## Open questions
+---
 
-**Design questions — all resolved by ruling 2026-09-11:**
+## §2.9 Open questions for Bill
 
-1. **Room/InputPending**: CONFIRMED — input accumulates; the engine decides
-   whether to respond; InputPending is not a commitment. (Homebrew-VTT use
-   case: the LLM must NOT respond unless explicitly spoken to.)
-2. **Dangling tool calls after interrupt**: a RENDERING decision — the
-   context data structures never carry it. Synthesize-"interrupted"
-   confirmed as the Anthropic default.
-3. **Error shape**: single `ErrorOccurred` with source enum, confirmed.
-4. **Thinking**: `AssistantThought{parts, signature}` events — thinking
-   text lives in the log (GUI); only opaque vendor replay material
-   (signature / signed block) enters the context.
-5. Naming evolves as the book and the resulting agent get written
-   (taxonomy v0).
+1. **Three vendors, or two required plus one as payoff?** Three matches the war
+   story exactly (the disaster was three clients) and makes the "third is
+   nearly free" prediction testable. Two is a smaller exercise. Leaning three.
+2. **Which two, if two?** Anthropic + Gemini are the most structurally
+   different (`systemInstruction` hoisted, `role: "model"`, parts not blocks),
+   so they prove more. Anthropic + OpenAI gives the sharper authorship lesson
+   via the `tool` role. Exhibit A needs all three to land fully.
+3. **Does `chat` have to work against all three vendors live**, or is live
+   Anthropic plus faked others acceptable? Leaning the latter — cost and key
+   availability are real student barriers and the seam is fully provable
+   against fakes.
+4. **Is `ch1parity` at 25 still right** when the seam is worth 35? It is a
+   quarter of the grade for "you didn't break what you had." Defensible, but
+   worth a ruling now rather than after the grader is built.
+5. **Should Chapter 2 state the three-chapter roadmap** (tools → actors →
+   seam-for-capabilities) so the reader knows hints are coming and does not
+   design for them prematurely? Leaning yes, briefly — write-once means readers
+   will reasonably ask "should I leave room for X?", and the honest answer is
+   "no, we sequenced it so you don't have to."
 
-**Exercise-protocol questions — opened and RESOLVED 2026-09-11.**
+---
 
-These arose from applying the Chapter 1 review to this chapter. Bill ruled on
-all four together: **agreed as proposed.** They are kept below with their
-reasoning intact, because each constrains the grader and a future reader
-deserves to know the alternative that was considered and declined.
+## Appendix — material relocated from Draft 3
 
-6. **The `render` subcommand.** I made `EventLog → rendered request` a CLI
-   surface (`./ch02 render LOG`) so replay, redaction and ephemera become
-   byte comparisons needing no server. It is the single biggest addition to
-   the exercise, and it constrains student architecture — it forces context
-   to be genuinely separable from transport. I think that constraint is the
-   chapter's thesis made executable rather than an imposition, but it is a
-   real constraint and it is yours to accept or reject.
-7. **Directives are acknowledged (`{"ok": true}`), not silent.** Keeps the
-   stdio stream synchronous so a hung submission fails with a location
-   instead of a timeout. Costs a small departure from Chapter 1's protocol,
-   which the student must notice.
-8. **Log format: JSON-lines, one event per line, ascending `Seq`.** Chosen
-   for greppability and so the grader can assert on the log with the same
-   tools it uses for requests. The alternative — a single JSON document —
-   round-trips just as well but is worse to debug at 3am.
-9. **Point weighting: `ch1parity` 30, the five new checks 70.** The
-   deliberate signal is that a rewrite which merely preserves Chapter 1's
-   behavior has not earned the chapter. If you'd rather parity dominate
-   (a rewrite that breaks the old contract is a failed rewrite, full stop),
-   the split should invert.
+`book/chapter-04-actors-parking.md` holds, verbatim, the hint and interrupt
+sections and review findings M1, M2, M4, E4, E7. Of particular value when
+Chapter 4 is outlined:
 
-**Not yet specified, and deliberately so:** the scripted session itself — how
-many rounds, where the interrupt lands, which `Seq` gets redacted. That is
-grader construction, not chapter content, and it should be written with the
-rig in front of us rather than guessed at here. Chapter 1's script was chosen
-that way and the memory probe's design (plant in round 1, check in round 4)
-came out of building it, not out of the outline.
-
-**Hint questions — opened and RULED 2026-09-11.**
-
-Adding real-time hints pulled in two things the outline did not previously
-require. Both were scope questions; both are now ruled.
-
-10. **Does Chapter 2 introduce a minimal tool? — RULED: YES. Exactly one:
-    `agent_status`.** Ruled twice, and the reversal is the instructive part.
-
-    The first ruling was *no — tools are Chapter 3*, on the sound instinct
-    that Chapter 2 is already a demolition and a rebuild and should not also
-    become the tool chapter. I wrote it up, re-grounded the `hint` and
-    `interrupt` checks on tool-free forms, and in doing so produced the
-    argument against it: **without a tool, a turn is one round trip, so a
-    turn has no middle, and "mid-turn steering" has nothing to steer.** The
-    hint degenerates into "your next message," which is precisely the thing
-    hints are not. The feature cannot be taught in a chapter that cannot
-    produce a long turn.
-
-    So: one zero-argument tool, `agent_status`, returning a deterministic
-    function of the log. No registry, no schemas, no dispatch — Chapter 3
-    builds the tool loop properly. This one exists to make a turn long enough
-    to interrupt. The fake drives it in a loop until the hint **"please
-    stop"** arrives correctly delivered, which makes the pass condition
-    behavioral: get it wrong and the loop simply keeps going.
-
-    Worth recording for the book's own sake: the scope instinct ("that
-    belongs in a later chapter") was right in general and wrong here, and the
-    way it got caught was writing the consequence down until it contradicted
-    itself. That is the same move the Chapter 1 review made — build the
-    artifact, let it tell you the spec is wrong.
-
-11. **Does the exercise require concurrent stdin? — RULED: YES.** The program
-    must read stdin while blocked on the network, so a round-synchronous
-    Chapter 1-shaped loop cannot pass. This is now graded directly: the fake
-    holds its reply open, and the *received while blocked* property of the
-    `hint` check is satisfied only by a submission that acks the directive
-    during that window.
-
-    This is not incidental difficulty. §2.5 defines an actor as identity +
-    **mailbox** + state + behavior, and until now nothing forced the mailbox
-    to exist. The hint forces it. A student who ends up with a goroutine
-    feeding a channel has discovered why the actor model is in this chapter
-    by being unable to proceed without it.
-
-    The risk stands and should be stated in the prose: this is the first
-    concurrency in the course, and a race is a miserable place to lose a
-    student. The mitigation is that the `hint` check reports *which* of its
-    four properties failed, so a student gets a named property rather than
-    "hint check failed".
-
+- **M1**: a pending hint is not in the dialogue; `RequestSent` is what moves it
+  there. The one place a careful student still fails.
+- **E4**: render *before* recording `RequestSent`, or the hint is delivered one
+  round late and gets misdiagnosed as vendor lag.
+- **M9's replacement**: hint responsiveness is an *engine* property, not a
+  vendor property — measured at an 11.4s mailbox blackout with a slow tool,
+  identical across carriages.
