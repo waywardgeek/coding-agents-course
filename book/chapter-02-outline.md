@@ -488,6 +488,16 @@ type Context struct {
     Usage    Usage  // running totals, vendor-normalized
 }
 
+// Token counts, NEVER money. All four fields are DISJOINT — they sum to the
+// billable total. Vendors disagree about whether that is true of their own
+// reporting; making it true is the parser's job.
+type Usage struct {
+    Input      int // input that was neither read from nor written to cache
+    CacheWrite int // cache creation. Typically costs MORE than plain input.
+    CacheRead  int // typically costs an order of magnitude LESS.
+    Output     int
+}
+
 type Entry struct {
     Actor Actor
     Parts []Part
@@ -579,6 +589,61 @@ needs to debug a session it can no longer reconstruct.
 The policy — what thresholds trigger which level, and where the boundaries fall
 — is context engineering, and it gets its own chapter. Chapter 2 owes it only a
 shape it will not have to break.
+
+### Usage is four numbers, not two — and they are not disjoint the same way
+
+`Usage` looks like bookkeeping and is not. It is the **instrument** that makes
+everything in the previous section tunable: you cannot set a token threshold
+you cannot measure, and you cannot justify a stable prefix without knowing what
+a cache read costs relative to a cache write.
+
+Four categories, at genuinely different prices:
+
+| category | rough price relative to plain input |
+|---|---|
+| `Input` | 1× |
+| `CacheWrite` | **more** than 1× — you pay a premium to create the entry |
+| `CacheRead` | **far less** — roughly an order of magnitude cheaper |
+| `Output` | several× |
+
+That `CacheRead` row is the whole economic argument for the volatility ordering
+in the context-engineering chapter. Put your most-changing content at the front
+of the prefix and you convert the cheapest category into the most expensive one,
+on every single request, forever. It is the most costly one-line mistake in
+agent engineering, and it is invisible without this struct.
+
+**The trap: vendors disagree about whether their own categories overlap.**
+
+Some report cached tokens as a **subset** of the prompt total. Others report
+them as **disjoint** additions alongside it. Normalize naively — sum everything
+you are given — and you double-count on one vendor and undercount on another,
+producing a cost figure that is confidently wrong in opposite directions
+depending on which model you are talking to.
+
+This is the purest seam bug in the chapter. Nothing crashes. No test fails. The
+number is simply not the number, and you will act on it for months.
+
+> **Canonical form: the four fields are disjoint and sum to the billable
+> total.** Whatever a vendor reports, the parser converts it. Where a vendor's
+> convention is a subset, subtract; where it is already disjoint, pass through.
+
+*(For the coder: the per-vendor conventions must be verified against current
+documentation before print — which is subset, which is disjoint, and whether
+either has changed. This is exactly the class of claim that was falsified in
+Draft 3. State the date of verification in the text.)*
+
+**Record counts, never money.** Prices change; token counts are history. A
+dollar amount in the log is wrong the moment a vendor reprices, and it destroys
+your ability to re-cost historical sessions under new rates. Pricing is
+configuration and belongs beside the model id; usage is a fact and belongs in
+the log. Same distinction as `Provenance` versus format vocabulary: record what
+happened, compute what it means.
+
+**A known gap, flagged rather than solved.** At least one vendor bills cache
+*storage* by duration — a real cost with no token count attached. A struct of
+pure counts cannot express it, and cache lifetime is a concept Chapter 2 does
+not have. Noted here so that the later caching chapter adds it deliberately,
+rather than discovering that `Usage` was the wrong shape all along.
 
 **Note what is absent: there is nowhere to put system prompt text.** That is
 deliberate and structural. The system prompt is an *output*, computed by the
@@ -870,7 +935,7 @@ finish Chapter 2.
 | `replay` | 10 | two renders of one log are byte-identical |
 | `redaction` | 10 | a `Redacted` event names its target; content absent from later renders |
 | `ephemera` | 10 | delivered exactly once, then absent — and never written to history |
-| `usage` | 5 | token accounting normalized from all three vendors |
+| `usage` | 5 | all four token categories normalized from all three vendors into one **disjoint** set — cache reads and writes separated from plain input, summing to the billable total |
 | `seam-render` | 15 | one log renders correctly to all three vendor request shapes |
 | `seam-parse` | 20 | three vendor responses produce contexts identical apart from `Provenance` — which must be preserved, not normalized away |
 
@@ -934,6 +999,14 @@ and three ways in and out of it.**
    *hook* — the `Redacted` event — is established here, so placement is
    genuinely flexible and need not be settled now. Ideas captured in
    `book/chapter-context-engineering-notes.md`.
+
+8. **Is `usage` still worth only 5 points?** It was priced when it meant
+   "record two numbers." It now means normalizing four categories across three
+   vendors that disagree about whether their own categories overlap — a silent,
+   confidently-wrong-in-both-directions bug, and arguably the purest seam
+   failure in the chapter. Leaning: raise it to 10, taking 5 from `seam-parse`
+   (which is where the work genuinely lives anyway, so the total seam weight is
+   unchanged). Not done unilaterally because it edits a ruled table.
 
 ---
 

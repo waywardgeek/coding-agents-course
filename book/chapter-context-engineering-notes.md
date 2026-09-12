@@ -86,6 +86,14 @@ every time a memory is written — the worst possible position for the most
 frequently-changing content. Memory positioned by compression level appends
 instead. Worth stating as a checkable claim, not a preference.
 
+**The quantitative backing is in `Usage`.** Cache reads cost roughly an order of
+magnitude less than plain input, and cache writes cost *more* than plain input.
+So misplacing volatile content at the front of the prefix does not merely fail
+to save money — it converts the cheapest token category into the most expensive
+one, on every request, forever. Chapter 2 §2.4a defines the four disjoint
+categories that make this measurable; without them the argument here is a
+preference, and with them it is arithmetic.
+
 ## Mechanisms already fixed in Chapter 2
 
 These are settled and the chapter inherits them:
