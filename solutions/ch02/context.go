@@ -160,8 +160,13 @@ func (c *Context) Apply(e Event) error {
 		// EVERY PAIR NOT LISTED IS IDENTITY. This arm, not the length of the
 		// table above, is what makes the reducer total. A table enumerates the
 		// transitions we thought of; the default covers the ones we did not.
-		// Note that it is not a panic: an agent that halts on an event it does
-		// not recognize is worse than one that ignores it.
+		//
+		// This is identity, not tolerance, and the difference matters. What
+		// lands here is a KNOWN event in a state that simply does not
+		// transition on it. An event type we do not recognize never reaches
+		// this switch at all: the loader refuses the log, loudly (§2.7).
+		// Silently skipping one would produce a context that is wrong in a way
+		// nothing downstream can detect — the opposite of what this arm does.
 	}
 	return nil
 }
@@ -208,6 +213,20 @@ func (c *Context) outstandingCalls() int {
 // RedactResult: the tool RESULT becomes a stub and the CALL survives, so the
 // model can still see what it asked for and why it asked.
 func (c *Context) applyRedaction(r RedactData) {
+	// RedactSummary is the one level that is NOT a per-entry filter, and it
+	// has to be lifted out of the loop before the loop is written.
+	//
+	// The other three transform each entry in the span independently: N
+	// entries in, N entries out. A summary REPLACES THE SPAN — §2.4a says the
+	// span is replaced by compressed prose, singular — so it folds the span
+	// into one entry. Written as a fourth case inside the loop, where it fits
+	// so tidily, it copies the same summary into every entry in the span, and
+	// compaction then GROWS the context it was called to shrink.
+	if r.Level == RedactSummary {
+		c.summarizeSpan(r)
+		return
+	}
+
 	for i := range c.Dialogue {
 		if c.Dialogue[i].Seq < r.From || c.Dialogue[i].Seq > r.To {
 			continue
@@ -245,12 +264,44 @@ func (c *Context) applyRedaction(r RedactData) {
 				}
 			}
 			c.Dialogue[i].Parts = kept
-		case RedactSummary:
-			// The only level whose replacement is STORED, because only here is
-			// the new content something an LLM wrote and nobody can recompute.
-			c.Dialogue[i].Parts = r.Replacement
 		}
 	}
+}
+
+// summarizeSpan collapses every entry in [From, To] into a single entry.
+//
+// Two things the event does not say, decided here once so that replay is
+// deterministic and so that two later chapters do not answer them differently:
+//
+//   - Seq is the span's own From. The event already carries it, so the
+//     collapsed entry keeps its position without storing anything new.
+//   - Actor is System. A span can cross Human, Agent and Tool, and a summary
+//     of several speakers is none of their speech — it is compaction output.
+//     §2.5 already models the actor, so this costs nothing.
+//
+// The summary lands at the position of the first entry it supersedes, which
+// keeps the dialogue in ascending Seq order without a re-sort.
+func (c *Context) summarizeSpan(r RedactData) {
+	out := make([]Entry, 0, len(c.Dialogue))
+	placed := false
+	for _, e := range c.Dialogue {
+		if e.Seq < r.From || e.Seq > r.To {
+			out = append(out, e)
+			continue
+		}
+		if placed || len(r.Replacement) == 0 {
+			continue // the span collapses; only the first survivor is emitted
+		}
+		out = append(out, Entry{
+			Seq:   r.From,
+			Actor: ActorSystem,
+			// The one level whose replacement is STORED, because only here is
+			// the new content something an LLM wrote and nobody can recompute.
+			Parts: append(PartList(nil), r.Replacement...),
+		})
+		placed = true
+	}
+	c.Dialogue = out
 }
 
 // stubFor synthesizes the replacement text. It is computed from the content it

@@ -28,15 +28,11 @@ const (
 )
 
 const (
-	SurfaceMessages Surface = iota + 1
-	SurfaceInteractions
-	SurfaceResponses
-	// Two surfaces the chapter's own exhibits use but §2.4a's enum omitted.
-	// Adding constants is additive; a Surface that cannot name the surface you
-	// are talking to is a Provenance that cannot be captured correctly, and
-	// provenance can never be reconstructed later.
-	SurfaceChatCompletions
-	SurfaceGenerateContent
+	SurfaceMessages        Surface = iota + 1 // Anthropic
+	SurfaceChatCompletions                    // OpenAI — what Exhibits A–C speak
+	SurfaceGenerateContent                    // Gemini — what Exhibits A–C speak
+	SurfaceInteractions                       // Gemini's replacement surface
+	SurfaceResponses                          // OpenAI's newer surface
 )
 
 var vendorNames = map[Vendor]string{
