@@ -79,7 +79,10 @@ Bill before building the table.
 ## Grader requirements
 
 - **Serve fake endpoints for all three vendors.** A student with one API key —
-  or none — must be able to score 100. Nobody pays three subscriptions.
+  or none — must be able to score 100. **RULED 2026-09-12: no live testing is
+  required to score 100; the fakes are the arbiter.** A cheap proxy will be
+  offered for readers who want to run live without signing up for three vendor
+  accounts, with BYO key identical. Nobody pays three subscriptions.
 - **Never grade on Go identifiers.** You already normalize event type names
   case- and punctuation-insensitively; extend the same discipline to field
   names. Failing someone for `Kind` instead of `Type` is not a lesson.
@@ -119,9 +122,16 @@ chapter is nothing but wire formats.
 If building it argues the spec is wrong, say so — that is what happened with
 question 10 in Draft 3, and the reversal improved the book. In particular:
 
-- Is three vendors too much for one exercise? (Open question 1. The fallback is
-  Anthropic + Gemini required, OpenAI as the payoff.)
+- Is three vendors too much for one exercise? **RULED 2026-09-12: three, all
+  graded, in the order Anthropic → OpenAI → Gemini.** The order is
+  load-bearing, not stylistic: the alien vendor goes **last** so that "the
+  third was nearly free" cannot be true merely because the third was the easy
+  one. Retreat position if it proves genuinely too heavy once built — grade
+  two, ship Gemini as an ungraded exercise with the prediction attached — but
+  retreat on evidence, not in advance.
 - Does the "third renderer is nearly free" prediction actually hold when you
   build it? The chapter states it out loud as a falsifiable claim about its own
   design. **If it does not hold, that is a finding, not an embarrassment** —
-  and it means the seam in §2.4a is wrong.
+  and it means the seam in §2.4a is wrong. You are the first person to run this
+  experiment; please report the actual cost of each of the three, because the
+  chapter tells the reader to measure it and we should know the answer first.

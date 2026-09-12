@@ -857,8 +857,35 @@ The second renderer costs real work. **The third should be nearly free.** If it
 is not, the seam is wrong — and the reader will discover that in an hour
 instead of in 30,000 lines.
 
-This is the chapter's falsifiable claim about its own design, and students
-should be told to notice whether it holds for them.
+This is the chapter's falsifiable claim about its own design, and it is the
+only place in the book where the reader can run the experiment themselves. So
+the **order is fixed, and it is fixed to make the test honest**:
+
+1. **Anthropic** — the baseline. Everything the student already has.
+2. **OpenAI** — a moderate difference: a `tool` role of its own, a flat message
+   list, `tool_calls` as an array. Enough divergence to force a real
+   abstraction rather than a rename.
+3. **Gemini** — the genuinely alien one. `contents` rather than `messages`,
+   `parts` rather than blocks, `role: "model"`, `systemInstruction` hoisted
+   clean out of the message list, `functionCall`/`functionResponse`.
+
+**The hardest vendor goes last on purpose.** The tempting order puts the most
+different one second and the most familiar one third — and then "the third was
+nearly free" is true because the third was *easy*, not because the seam was
+right. The claim would pass for the wrong reason. Put the alien one last and
+the prediction is tested in the direction that can actually falsify it.
+
+Tell the reader to notice what each one costs them. If the third takes twenty
+minutes after the second took two hours, they have felt the thing this chapter
+is about in a way no paragraph delivers. And if it does *not* — if Gemini
+forces them back into the context to add a field — then their seam is wrong,
+they have learned it on day one, and the chapter has done its job by losing its
+own bet.
+
+Two points always fit a line. A student can shape the interface around vendor
+A, bend vendor B to fit it, and call the result a seam. The third
+implementation is what separates an abstraction from a bridge between two
+specific things.
 
 ---
 
@@ -903,6 +930,11 @@ parameter come from the environment (`LLM_VENDOR=anthropic|openai|gemini`),
 exactly as in grader mode. Two renders are compared byte for byte, so the
 moment rendering accepts `--model`, byte-identity becomes a property of how you
 invoked the command rather than of the log.
+
+**Build them in this order: Anthropic, then OpenAI, then Gemini.** The reason is
+in §2.6 — the order is what makes the chapter's prediction a real test rather
+than a flattering one. Note how long each takes you. That number is the
+chapter's actual lesson, and it is yours rather than ours.
 
 ### Log serialization
 
@@ -962,17 +994,34 @@ and three ways in and out of it.**
 
 ## §2.9 Open questions for Bill
 
-1. **Three vendors, or two required plus one as payoff?** Three matches the war
-   story exactly (the disaster was three clients) and makes the "third is
-   nearly free" prediction testable. Two is a smaller exercise. Leaning three.
-2. **Which two, if two?** Anthropic + Gemini are the most structurally
-   different (`systemInstruction` hoisted, `role: "model"`, parts not blocks),
-   so they prove more. Anthropic + OpenAI gives the sharper authorship lesson
-   via the `tool` role. Exhibit A needs all three to land fully.
-3. **Does `chat` have to work against all three vendors live**, or is live
-   Anthropic plus faked others acceptable? Leaning the latter — cost and key
-   availability are real student barriers and the seam is fully provable
-   against fakes.
+1. ~~**Three vendors, or two required plus one as payoff?**~~ **RULED
+   (2026-09-12): three.** Anthropic, OpenAI, Gemini — all three graded, in that
+   order. Three matches the war story (the disaster was three clients) and is
+   the only count that makes the "third is nearly free" prediction testable at
+   all. The order is load-bearing and is fixed in §2.6: the alien vendor goes
+   **last**, so the prediction is tested where it can actually fail.
+   *Retreat position if it proves too heavy when the code is built:* grade two,
+   ship Gemini as an ungraded exercise with the prediction attached. Retreat on
+   evidence, not in advance.
+2. ~~**Which two, if two?**~~ **MOOT** — resolved by the ruling above. Exhibit A
+   needs all three to land in any case, since its whole point is that three
+   vendors cannot agree on who authored a tool result.
+3. ~~**Does `chat` have to work against all three vendors live?**~~ **RULED
+   (2026-09-12): no live testing is required to score 100.** The grader's fakes
+   are the arbiter: a solution that works against them is accepted. For readers
+   who want to run live, a cheap proxy is offered so nobody has to sign up for
+   three vendor accounts — bring your own key if you prefer, identical either
+   way. But if you want it to work live, you have to test it live; passing
+   against a fake is not a claim about production.
+
+   **Say that last part in the prose, because this book has already been caught
+   by it.** Draft 3 of this chapter asserted a vendor capability that our own
+   fakes happily accepted and that turned out to be false the moment it was run
+   against the real API. A fake is a *model* of a vendor, and a model is wrong
+   in exactly the places you did not think to model. That is not an argument
+   against fakes — they make this exercise affordable and they catch the bugs
+   that matter here — it is an argument for knowing what a green grader does
+   and does not prove.
 4. **Is `ch1parity` at 25 still right** when the seam is worth 35? It is a
    quarter of the grade for "you didn't break what you had." Defensible, but
    worth a ruling now rather than after the grader is built.
