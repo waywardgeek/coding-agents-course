@@ -1,5 +1,15 @@
 # Review of `chapter-02-outline.md`
 
+> **SUPERSEDED (2026-09-12).** This reviews **Draft 3**, which was
+> Anthropic-only and contained hints, interrupts, a mailbox and the
+> `agent_status` tool. Draft 4 is the LLM seam chapter. The current review is
+> **`book/review-ch02-draft4.md`**.
+>
+> This file is kept because `book/chapter-04-actors-parking.md` cites its
+> findings M1, M2, M4, E4 and E7, which remain correct and are simply not due
+> until Chapter 4. See `book/brief-ch02-code.md` for the applied / moved /
+> obsolete disposition of every finding below.
+
 **Reviewer:** the coder (Opus 5), writing from having built the Chapter 2
 grader and the reference solution against this outline.
 **Date:** 2026-09-11.
