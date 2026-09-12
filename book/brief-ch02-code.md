@@ -70,11 +70,14 @@ for the grader:
 ## Checks (sum = 100)
 
 `session` 0 · `ch1parity` 25 · `logdump` 5 · `replay` 10 · `redaction` 10 ·
-`ephemera` 10 · `usage` 5 · `seam-render` 15 · `seam-parse` 20
+`ephemera` 10 · `usage` 10 · `seam-render` 15 · `seam-parse` 15
 
-**Open question 8 may change this**: `usage` was priced at 5 when it meant
-"record two numbers." It may rise to 10, taking 5 from `seam-parse`. Check with
-Bill before building the table.
+**All eight open questions are now ruled** except question 7 (placement of the
+context-engineering chapter), which does not affect this work. The table above
+is final — `usage` was raised from 5 to 10 on 2026-09-12, taking 5 from
+`seam-parse`, because it means normalizing four token categories across three
+vendors that disagree about whether their own categories overlap. Total seam
+weight is unchanged: the parse side is 25 against the render side's 15.
 
 ## Grader requirements
 

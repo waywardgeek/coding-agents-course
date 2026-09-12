@@ -989,16 +989,21 @@ finish Chapter 2.
 | `replay` | 10 | two renders of one log are byte-identical |
 | `redaction` | 10 | a `Redacted` event names its target; content absent from later renders |
 | `ephemera` | 10 | delivered exactly once, then absent — and never written to history |
-| `usage` | 5 | all four token categories normalized from all three vendors into one **disjoint** set — cache reads and writes separated from plain input, summing to the billable total |
+| `usage` | 10 | all four token categories normalized from all three vendors into one **disjoint** set — cache reads and writes separated from plain input, summing to the billable total |
 | `seam-render` | 15 | one log renders correctly to all three vendor request shapes |
-| `seam-parse` | 20 | three vendor responses produce contexts identical apart from `Provenance` — which must be preserved, not normalized away |
+| `seam-parse` | 15 | three vendor responses produce contexts identical apart from `Provenance` — which must be preserved, not normalized away |
 
 **Sum: 100.**
 
 Notes on the weighting:
 
-- **`seam-parse` outscores `seam-render`** because parsing is the half where
-  vendor shape actually hides, and the half the author got wrong.
+- **The parse side still outweighs the render side, 25 to 15** — it is just
+  itemized now. `usage` is parsing work: normalizing four token categories
+  across three vendors that disagree about whether their own categories
+  overlap. Pulling it out of `seam-parse` and naming it separately means a
+  student who gets the message shapes right but the accounting wrong is told
+  *which* half failed, instead of losing a large undifferentiated block.
+  Parsing is where vendor shape hides, and where the author's own seam failed.
 - **`ch1parity` stays at 25**, honouring the standing guard from Chapter 1's
   review. Below that, a rewrite that silently breaks Chapter 1's contract
   starts to look survivable.
@@ -1070,13 +1075,13 @@ and three ways in and out of it.**
    *hook* — the `Redacted` event — is established here, so placement is
    genuinely flexible and need not be settled now. Ideas captured in
    `book/chapter-context-engineering-notes.md`.
-8. **Is `usage` still worth only 5 points?** It was priced when it meant
-   "record two numbers." It now means normalizing four categories across three
-   vendors that disagree about whether their own categories overlap — a silent,
-   confidently-wrong-in-both-directions bug, and arguably the purest seam
-   failure in the chapter. Leaning: raise it to 10, taking 5 from `seam-parse`
-   (which is where the work genuinely lives anyway, so the total seam weight is
-   unchanged). Not done unilaterally because it edits a ruled table.
+8. ~~**Is `usage` still worth only 5 points?**~~ **RULED (2026-09-12): raised
+   to 10, taking 5 from `seam-parse`.** It was priced when it meant "record two
+   numbers." It now means normalizing four categories across three vendors that
+   disagree about whether their own categories overlap — a silent bug, wrong in
+   opposite directions depending on the vendor. Total seam weight is unchanged
+   (the parse side is still 25 against the render side's 15); the hard part is
+   simply named now, so a failing student learns *which* half broke.
 
 ---
 
