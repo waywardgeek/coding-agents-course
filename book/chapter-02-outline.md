@@ -320,10 +320,27 @@ type ResponseData struct {
 // Provenance records who produced content. Recorded at WRITE time by the
 // client that produced it, NEVER inferred later.
 type Provenance struct {
-    Vendor  string // "anthropic" | "google" | "openai"
-    Model   string // "claude-opus-5" — the exact model, not the vendor
-    Surface string // "messages" | "interactions" | "responses"
+    Vendor  Vendor
+    Model   string // OPEN set. New models ship weekly. Never switch on it.
+    Surface Surface
 }
+
+type Vendor uint8
+type Surface uint8
+
+// iota + 1 on purpose: the zero value is INVALID, so a Provenance that was
+// never populated is detectable instead of silently meaning "Anthropic".
+const (
+    VendorAnthropic Vendor = iota + 1
+    VendorGoogle
+    VendorOpenAI
+)
+
+const (
+    SurfaceMessages Surface = iota + 1
+    SurfaceInteractions
+    SurfaceResponses
+)
 
 type RedactData struct {
     Target Seq    // the event superseded. Never mutate the original.
@@ -403,6 +420,38 @@ Hence the rule, which is about capture rather than rendering:
 Inference is impossible in principle here — by the time you are rendering, the
 model that produced a signature three turns ago is simply not derivable from
 anything else in the context. Miss it at capture and the information is gone.
+
+### Enum or string? The rule, and why `Model` is the odd one out
+
+Two of `Provenance`'s three fields are enums and one is a string, which looks
+inconsistent until you have the rule:
+
+> **Enum when the code must exhaustively handle every case. String when the
+> value is only compared for equality and the set is open.**
+
+`Vendor` and `Surface` are closed sets the renderer *switches on* — there is
+exactly one renderer and parser per vendor, compiled in. A typo like
+`"Messages"` in a string field is a runtime surprise; as an enum it does not
+compile. `Model` is the opposite: an open set that gains members weekly, never
+switched on, only ever compared — *is this the same model that issued that
+signature?* Make it an enum and you need a rebuild to record a model you have
+no other opinion about.
+
+Two details that are easy to get wrong:
+
+**Start the constants at `iota + 1`.** The zero value must be invalid.
+Otherwise a `Provenance` that nobody populated is indistinguishable from a
+genuine Anthropic/messages one — and since provenance must be captured at write
+time and can never be reconstructed, "nobody populated it" is precisely the bug
+you need to be loud. A zero value that silently means something is a default
+wearing a disguise.
+
+**Marshal them as readable strings, and refuse unknown ones on the way in.**
+The log is JSON-lines so that ordinary tools can grep it (§2.2); `"vendor":2`
+destroys that for no gain. An unrecognized surface on read is a **loud
+refusal**, exactly as §2.7 requires for an unknown event type. Not a default,
+not a skip — the same discipline, for the same reason: a value you silently
+coerce is a value you will debug in production.
 
 ### The tool-call id, and where it collides with replay
 
