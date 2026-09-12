@@ -273,6 +273,172 @@ Store it and you have just picked a vendor.
 
 ---
 
+## §2.4a The types, in one place
+
+*Gathered here so they can be reviewed as a set. In the prose each type is
+introduced where it is motivated — this section is the contract with the
+grader and the reference solution.*
+
+Shapes, not implementations. Field names are illustrative; the grader
+normalizes names case- and punctuation-insensitively, and must never grade on
+Go identifiers.
+
+### The log
+
+```go
+type Seq uint64
+
+type Event struct {
+    Seq  Seq
+    Type EventType
+    Time time.Time // METADATA. Ordering comes from Seq, never from this.
+
+    // Exactly one is non-nil, selected by Type. Verbose on purpose:
+    // it round-trips as JSON with no registry, and it makes the
+    // reducer's switch exhaustive by construction.
+    Message  *MessageData
+    Request  *RequestData
+    Response *ResponseData
+    Tool     *ToolData
+    Redact   *RedactData
+    Error    *ErrorData
+}
+
+type MessageData struct {
+    Actor Actor
+    Parts []Part
+}
+
+type ResponseData struct {
+    Parts  []Part
+    Usage  Usage
+    Vendor string // which vendor produced this. Load-bearing; see below.
+}
+
+type RedactData struct {
+    Target Seq    // the event superseded. Never mutate the original.
+    Reason string
+}
+```
+
+### Content
+
+```go
+type Part interface{ isPart() }
+
+type TextPart   struct{ Text string }
+type BlobPart   struct{ MIME, Path string } // on disk, never inline
+type OpaquePart struct{ Vendor string; Data json.RawMessage }
+
+type ToolCallPart struct {
+    CallID string // the ID AS ISSUED, by the vendor named below
+    Vendor string
+    Name   string
+    Args   json.RawMessage
+}
+
+type ToolResultPart struct {
+    CallID  string
+    Parts   []Part
+    IsError bool // a tool that ran and failed is CONTENT, not ErrorOccurred
+}
+```
+
+**`ToolCallPart.Vendor` is the subtle one, and it is worth the chapter's
+attention.** The tool-call id is the single place a vendor's vocabulary
+legitimately enters the context — you cannot answer a call without quoting the
+id that made it. So it is carried as opaque replay material, **tagged with the
+vendor that issued it**.
+
+Which produces a real forced discovery: render a conversation containing an
+Anthropic-issued `toolu_…` id to OpenAI and the id is meaningless. The renderer
+must synthesize one — and it must be **derived from `Seq`**, not generated
+randomly, because `replay` compares bytes and a random id is one of the four
+non-determinism sources named in §2.7. The seam and the determinism rule meet
+here, and students who wire them up independently will collide.
+
+### The context
+
+```go
+type Context struct {
+    Turn     TurnState
+    Dialogue []Entry
+    Ephemera []Part        // pending; delivered once, then cleared
+    Redacted map[Seq]bool  // supersessions already applied
+    Usage    Usage         // running totals, vendor-normalized
+}
+
+type Entry struct {
+    Actor Actor
+    Parts []Part
+}
+```
+
+**Note what is absent: there is nowhere to put system prompt text.** That is
+deliberate and structural. The system prompt is an *output*, computed by the
+renderer from `Config` (§2.4). If a reader wants to store it, they will have to
+add a field — and adding it is the moment to stop and re-read §2.4.
+
+Equally absent: `role`, `content`, `tool_use_id`, `assistant`. If any vendor's
+vocabulary appears in these types, the seam has already leaked.
+
+### The seam
+
+```go
+type Renderer interface {
+    Render(*Context, Config) (*http.Request, error)
+}
+
+type Parser interface {
+    Parse(status int, body []byte) ([]Event, error)
+}
+```
+
+**Two methods. No vendor types in either signature.** That is the whole
+remedy, and its smallness is the point.
+
+`Parse` returns **events**, not a message or a context. There is exactly one
+path into the context — append events, run the reducer — so a vendor response
+and a human keystroke enter by the same door. Give the parser the power to
+mutate context directly and you have quietly created a second reducer that
+nobody will remember to keep total.
+
+Contrast the shape that cost 30,000 lines:
+
+```go
+// DON'T. This is the mistake in §2.0, in its natural habitat.
+type AIClientInterface interface {
+    SendMessage(msgs []ClaudeMessage) (*ClaudeResponse, error)
+    CountTokens(msgs []ClaudeMessage) (int, error)
+    // ...eleven more methods, each shaped by what ClaudeClient
+    //    already happened to do
+}
+```
+
+The tell is visible without knowing the story: **vendor types in the
+signature.** `ClaudeMessage` in the interface means the interface *is* the
+Claude client, and the second implementation can only be a copy-paste. An
+interface extracted from one implementation records that implementation's
+accidents as though they were requirements.
+
+### What exists now for a later chapter
+
+Under write-once, readers will reasonably ask why a field exists that nothing
+uses yet. Answer honestly, in the text:
+
+| element | used in Ch2 | exists for |
+|---|---|---|
+| `ToolCallPart` / `ToolResultPart` | rendering supplied logs | Ch3, where tools are executed |
+| `BlobPart.Path` | not exercised | Ch3, when tool output arrives by the megabyte |
+| `OpaquePart` | thinking signatures | every chapter; never interpreted |
+| `TurnState.ToolsPending` | replaying supplied logs | Ch3 |
+| `Redacted` | fully exercised | Ch7 |
+
+This table is the write-once discipline made visible, and it is the chapter's
+answer to "am I over-engineering?" — no, and here is the receipt.
+
+---
+
 ## §2.5 Actors and rooms
 
 Actors: `Human`, `Agent`, `System`, `Tool`. Rooms group a conversation. There
