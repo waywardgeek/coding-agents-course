@@ -70,21 +70,21 @@ func SeamFor(v Vendor) (Renderer, Parser, error) {
 		return anthropicSeam{}, anthropicSeam{}, nil
 	case VendorOpenAI:
 		return openAISeam{}, openAISeam{}, nil
-	case VendorGoogle:
+	case VendorGemini:
 		return geminiSeam{}, geminiSeam{}, nil
 	}
 	return nil, nil, fmt.Errorf("no seam for vendor %d", uint8(v))
 }
 
 // DefaultSurface is the surface each vendor's seam targets in this chapter.
-// OpenAI's Chat Completions and Google's generateContent are chosen over their
+// OpenAI's Chat Completions and Gemini's generateContent are chosen over their
 // newer siblings deliberately: they are the shapes the chapter's exhibits show,
 // and they preserve the difficulty ordering the chapter's prediction depends on.
 func DefaultSurface(v Vendor) Surface {
 	switch v {
 	case VendorOpenAI:
 		return SurfaceChatCompletions
-	case VendorGoogle:
+	case VendorGemini:
 		return SurfaceGenerateContent
 	default:
 		return SurfaceMessages

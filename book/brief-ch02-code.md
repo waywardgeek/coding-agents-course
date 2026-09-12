@@ -113,7 +113,7 @@ category that got falsified last time. Treat every one as unverified:
 5. **Gemini surfaces.** The claim that Interactions signs thought steps and
    built-in tool steps but never standard function calls, and that legacy
    `generateContent` 400s on a `functionCall` replayed without its signature.
-6. **The model/vendor thinking-replay asymmetry**: Google errors, Anthropic
+6. **The model/vendor thinking-replay asymmetry**: Gemini errors, Anthropic
    silently drops. This is Bill's direct experience and is used to make a point
    about loud versus silent failure.
 

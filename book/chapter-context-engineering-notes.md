@@ -20,7 +20,7 @@ Set a token threshold. When the context reaches it, compaction begins
 automatically — but *not* by replacing the oldest portion of history with a
 summary.
 
-**Compaction by position vs compaction by category.** Google's ADK (and the
+**Compaction by position vs compaction by category.** one widely used agent SDK (and the
 common framework approach) replaces a portion of history with an LLM-written
 summary. Done. That is compaction by **position**: it discards whatever happens
 to be old, valuable or not, and what it loses is unpredictable — a summary is

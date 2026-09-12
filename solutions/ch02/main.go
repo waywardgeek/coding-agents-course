@@ -186,7 +186,7 @@ func configFromEnv() (Config, error) {
 		cfg.Model = pick("LLM_MODEL", "OPENAI_MODEL", "gpt-5")
 		cfg.BaseURL = pick("LLM_BASE_URL", "OPENAI_BASE_URL", "https://api.openai.com")
 		cfg.APIKey = pick("LLM_API_KEY", "OPENAI_API_KEY", "")
-	case VendorGoogle:
+	case VendorGemini:
 		cfg.Model = pick("LLM_MODEL", "GEMINI_MODEL", "gemini-3-pro")
 		cfg.BaseURL = pick("LLM_BASE_URL", "GEMINI_BASE_URL", "https://generativelanguage.googleapis.com")
 		cfg.APIKey = pick("LLM_API_KEY", "GEMINI_API_KEY", "")
@@ -200,8 +200,8 @@ func parseVendor(s string) (Vendor, error) {
 		return VendorAnthropic, nil
 	case "openai":
 		return VendorOpenAI, nil
-	case "gemini", "google":
-		return VendorGoogle, nil
+	case "gemini":
+		return VendorGemini, nil
 	}
 	return 0, fmt.Errorf("unknown vendor %q (want anthropic, openai or gemini)", s)
 }

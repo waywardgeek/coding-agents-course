@@ -59,6 +59,24 @@ and prevents a corrected bug from making the whole book look careless. A stale
 complaint is worse than no complaint: it tells the reader our measurements have
 an expiry date we did not track.
 
+**Name the API and the model family, never the company.** Write *"the Gemini
+API deprecated `generateContent`"*, not *"Google deprecated `generateContent`"*.
+Two reasons, both independent of who happens to be writing:
+
+1. A criticism aimed at a technical artifact is something the reader can
+   reproduce. A criticism aimed at a company is a claim about corporate intent,
+   and no receipt can settle it — so it reads as a grievance no matter how
+   carefully it is phrased.
+2. API surfaces outlive the org charts that shipped them. A sentence about
+   `generateContent` is still true after a reorg; a sentence about a company's
+   priorities is stale the moment someone changes jobs.
+
+One exception, and it is a hard one: **verbatim wire identifiers are protocol
+facts.** `GoogleSearch` and `GoogleMaps` are literal tool names in the
+discovery document. Renaming them to fit this rule would make the record false,
+and a false record is a worse failure than an inelegant one. Quote identifiers
+exactly as they appear on the wire, always.
+
 **Criticize the API, not the company.** The former is a technical claim we
 verified. The latter is a fight we cannot win in a book that takes a year to
 reach print.

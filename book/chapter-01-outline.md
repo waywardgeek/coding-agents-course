@@ -23,7 +23,7 @@ hook.
 - **SpaceX acquires Cursor (Anysphere), ~$60B all-stock, June 2026** — an AI
   code editor valued above most aerospace companies.
 - **The Windsurf drama** — one product, three suitors, three deal shapes:
-  OpenAI's ~$3B buyout collapses → Google takes leadership + IP in a ~$2.4B
+  OpenAI's ~$3B buyout collapses → a hyperscaler takes leadership + IP in a ~$2.4B
   licensing/acqui-hire → Cognition buys the remaining product, brand, and
   enterprise base.
 - **OpenAI buys Ona** (secure cloud execution & orchestration, for Codex);
@@ -221,7 +221,7 @@ The awkward truth, taught straight because it is part of the landscape:
   buying the execution layer — pointed downmarket at individual developers.)
 - **The course's answer: a proxy — optional.** Students fund a modest amount
   (Stripe) on the course site, and their programs hit the course URL, which
-  proxies to Anthropic / Google / OpenAI with metered, per-student budgets.
+  proxies to Anthropic / Gemini / OpenAI with metered, per-student budgets.
   No provider account, no tier wall, no waiting. **If you already have an
   API key, you don't need us**: the entire course runs identically pointed
   straight at the provider. The proxy exists to remove the toll booth, not

@@ -47,7 +47,7 @@ var mutations = []mutation{
 	{
 		name:     "provenance-hardcoded",
 		why:      "gemini parser copy-pasted from the anthropic one and kept its provenance",
-		edits:    []edit{{"gemini.go", `from := Provenance\{Vendor: VendorGoogle, Model: resp\.ModelVersion, Surface: SurfaceGenerateContent\}`, `from := Provenance{Vendor: VendorAnthropic, Model: "claude-sonnet-5-fake", Surface: SurfaceMessages}`}},
+		edits:    []edit{{"gemini.go", `from := Provenance\{Vendor: VendorGemini, Model: resp\.ModelVersion, Surface: SurfaceGenerateContent\}`, `from := Provenance{Vendor: VendorAnthropic, Model: "claude-sonnet-5-fake", Surface: SurfaceMessages}`}},
 		wantFail: []string{"seam-parse"},
 	},
 	{

@@ -73,7 +73,7 @@ type Provenance struct {
 
 type Vendor uint8
 type Surface uint8
-const ( VendorAnthropic Vendor = iota + 1; VendorGoogle; VendorOpenAI )
+const ( VendorAnthropic Vendor = iota + 1; VendorGemini; VendorOpenAI )
 const ( SurfaceMessages Surface = iota + 1; SurfaceInteractions; SurfaceResponses )
 // iota+1: zero value INVALID so unpopulated != "Anthropic".
 // Marshal as readable STRINGS (log is greppable JSON-lines).

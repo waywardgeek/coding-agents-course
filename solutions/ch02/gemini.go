@@ -1,6 +1,6 @@
 package main
 
-// Google — Gemini, generateContent.
+// Gemini — Gemini, generateContent.
 //
 // Wire format verified against ai.google.dev on 2026-09-12.
 //
@@ -68,7 +68,7 @@ type gemOutput struct {
 }
 
 func (geminiSeam) Render(c *Context, cfg Config) (*http.Request, error) {
-	target := Provenance{Vendor: VendorGoogle, Model: cfg.Model, Surface: SurfaceGenerateContent}
+	target := Provenance{Vendor: VendorGemini, Model: cfg.Model, Surface: SurfaceGenerateContent}
 
 	// Gemini's functionResponse requires the function NAME, and a
 	// ToolResultPart carries only the call id. The information is in the
@@ -211,7 +211,7 @@ func (geminiSeam) Parse(status int, body []byte) ([]Event, error) {
 	if len(resp.Candidates) == 0 {
 		return nil, fmt.Errorf("gemini: response had no candidates")
 	}
-	from := Provenance{Vendor: VendorGoogle, Model: resp.ModelVersion, Surface: SurfaceGenerateContent}
+	from := Provenance{Vendor: VendorGemini, Model: resp.ModelVersion, Surface: SurfaceGenerateContent}
 
 	var parts PartList
 	for _, p := range resp.Candidates[0].Content.Parts {

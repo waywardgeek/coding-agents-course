@@ -23,7 +23,7 @@ type Surface uint8
 // reconstructed, "nobody populated it" is precisely the bug you need loud.
 const (
 	VendorAnthropic Vendor = iota + 1
-	VendorGoogle
+	VendorGemini
 	VendorOpenAI
 )
 
@@ -41,7 +41,7 @@ const (
 
 var vendorNames = map[Vendor]string{
 	VendorAnthropic: "anthropic",
-	VendorGoogle:    "google",
+	VendorGemini:    "gemini",
 	VendorOpenAI:    "openai",
 }
 

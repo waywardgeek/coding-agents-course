@@ -15,10 +15,10 @@ drift and this chapter is nothing but wire formats.
 | # | chapter claim | verdict |
 |---|---|---|
 | 1 | Anthropic **rejects** two consecutive user messages, forcing the Exhibit B merge | **FALSIFIED** — it *combines* them server-side. The merge is still required, for a different and sharper reason. |
-| 2 | Replaying another model's thinking: **Google errors, Anthropic silently drops** | **FALSIFIED in both cells.** |
+| 2 | Replaying another model's thinking: **Gemini errors, Anthropic silently drops** | **FALSIFIED in both cells.** |
 | 3 | OpenAI has no cache-**write** category | **FALSIFIED** — `cache_write_tokens` exists. |
 | 4 | Cache reads cost "roughly an order of magnitude less" | **true as a rule**, with named exceptions in both directions |
-| 5 | "At least one vendor bills cache storage by duration" | **CONFIRMED — it is Google.** |
+| 5 | "At least one vendor bills cache storage by duration" | **CONFIRMED — it is Gemini.** |
 | 6 | Gemini `functionCall` → `finishReason` signals tool use | **FALSIFIED** — it is `STOP`. Parse the parts. |
 
 ---
@@ -61,7 +61,7 @@ Anthropic *is* loud about a **modified** block: 400 `invalid_request_error`.
 And a beta header (`thinking-binding-controls-2026-08-01`) now surfaces drops in
 an `input_transformations` array, so the silence is becoming optional.
 
-**Google does NOT error on another model's signature.** A 4×4 live matrix —
+**Gemini does NOT error on another model's signature.** A 4×4 live matrix —
 signatures harvested from four Gemini models and cross-replayed — returned
 **16/16 HTTP 200**, including every cross-model pair. The harness is credible
 because the *same* harness produced 400s for the two cases that do fail:
@@ -77,7 +77,7 @@ without error"*, not *"honored"*.
 
 **Recommended replacement framing.** The loud/silent contrast is still
 available and is now better grounded, because it is about *integrity* rather
-than *authorship*: Google validates the signature and refuses loudly when it is
+than *authorship*: Gemini validates the signature and refuses loudly when it is
 absent or corrupt; Anthropic validates the binding and discards quietly when
 the current model cannot read it. Same lesson — the loud failure is the good
 one — without a false table.
@@ -128,7 +128,7 @@ Also unmodelled: Gemini's `toolUsePromptTokenCount`, a fourth billable term.
   any cost."* The write premium is the storage charge.
 - **OpenAI:** automatic caching, no explicit markers, and a cache-write count
   that *does* exist. No duration storage billing.
-- **Google:** the vendor the chapter's "known gap" is about. Storage is billed
+- **Gemini:** the vendor the chapter's "known gap" is about. Storage is billed
   **per 1M tokens per hour**, a separate published line per model (e.g.
   `gemini-3.5-flash` "$1.00 / 1,000,000 tokens per hour"). Explicit caching
   only; implicit caching has no storage cost. **There is no cache-write token
@@ -137,7 +137,7 @@ Also unmodelled: Gemini's `toolUsePromptTokenCount`, a fourth billable term.
   attached to any response, exactly as the chapter says.
 - The cached-token discount is **90% on Gemini 2.5+**, not 75% (75% was Gemini
   2.0). Pricing arithmetic confirms cached = exactly 10% of input.
-- Date-stamp any absolute price: Google's tables already carry a scheduled
+- Date-stamp any absolute price: Gemini's tables already carry a scheduled
   2027-01-01 increase.
 
 ## 5. Shapes confirmed
@@ -216,7 +216,7 @@ Training data was badly stale in every case — it contained none of the
   Trusting the crawler would have produced "usage convention UNVERIFIED" on the
   highest-value claim. Fetching the raw `.md` with `curl` and grepping locally
   is what produced the formula.
-- **Machine-readable sources beat prose.** Google's discovery document
+- **Machine-readable sources beat prose.** Gemini's discovery document
   (revision 20260910) and the Interactions OpenAPI spec settled the enum list,
   usage semantics and signature-by-step-type exactly, where HTML guides were
   vague or silent. But the Interactions API is *missing* from discovery and only

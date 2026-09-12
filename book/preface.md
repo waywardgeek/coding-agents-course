@@ -117,20 +117,9 @@ and they are the reason the usage section is the most heavily receipted part of
 the book. No model has these conventions right from training data. We didn't
 either, and we are the ones writing it down.
 
-## Disclosure
-
-I work at Google. Nothing in this book represents Google's position on anything,
-and no part of it draws on information that isn't publicly verifiable — every
-vendor claim here can be reproduced by anyone with an account and an afternoon.
-
-I am also harder on Google's API in these pages than on anyone else's. Partly
-that is exposure: it is the one I use most, so I have hit more of its edges.
-Partly it is that I have already raised these same complaints internally,
-through the normal channels, and I would rather say in public exactly what I
-have said in private. Where I call something badly designed, I mean it, and I
-have said so in both places.
-
-I have tried to be fair everywhere and flattering nowhere. If you catch me
+I have tried to be fair everywhere and flattering nowhere. Every vendor claim in
+this book can be reproduced by anyone with an account and an afternoon, and that
+is deliberate: you should not have to take my word for any of it. If you catch me
 calling something crap that is actually beautiful, or the reverse, the repository
 takes issues.
 

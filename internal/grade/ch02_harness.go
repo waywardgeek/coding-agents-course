@@ -245,7 +245,7 @@ func runVendorSession(bin, work, vendor string) (*VendorSession, error) {
 // runUsageProbe exercises the cache-WRITE category in isolation.
 //
 // Only Anthropic and OpenAI report a cache-write token count at all. Gemini
-// reports none anywhere in usageMetadata — the cost exists (Google bills cache
+// reports none anywhere in usageMetadata — the cost exists (Gemini bills cache
 // storage by duration) but no token count is attached to any response. The
 // honest canonical answer for Gemini is therefore zero, and the grader expects
 // zero rather than an invented number.

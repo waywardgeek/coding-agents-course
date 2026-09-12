@@ -62,10 +62,10 @@ The table in §2.4a:
 
 | vendor | replaying another model's thinking |
 |---|---|
-| Google | returns an **error** |
+| Gemini | returns an **error** |
 | Anthropic | **silently drops it** |
 
-**Google does not error.** A 4×4 matrix — signatures harvested from four Gemini
+**Gemini does not error.** A 4×4 matrix — signatures harvested from four Gemini
 models, each replayed to each — returned **16/16 HTTP 200**, every cross-model
 pair included. The harness is trustworthy because the same harness produced
 400s for the two cases that *do* fail: a **corrupted** signature (`"Corrupted
@@ -83,13 +83,13 @@ it."* So "a different model ⇒ dropped" is half wrong. Anthropic is also
 **Recommended replacement, which keeps the lesson and is true.** The contrast is
 about **integrity, not authorship**:
 
-> Google validates the signature and refuses loudly when it is absent or
+> Gemini validates the signature and refuses loudly when it is absent or
 > corrupt. Anthropic validates the binding and discards quietly when the current
-> model cannot read it. The loud failure is still the good one — Google's 400
+> model cannot read it. The loud failure is still the good one — Gemini's 400
 > costs you an afternoon, Anthropic's silence costs you a subtly worse agent
 > that passes every test.
 
-One caveat for print: 16/16 is HTTP-level acceptance. Whether Google's backend
+One caveat for print: 16/16 is HTTP-level acceptance. Whether Gemini's backend
 *honours* a foreign signature is not observable from outside. Write "accepted
 without error", not "honored".
 
@@ -172,9 +172,9 @@ cache-write concept. Verified live:
   only size figure comes back once, from `cachedContents.create`.
 
 So the honest canonical value for Gemini's `CacheWrite` is **0**, and that is a
-finding rather than a shrug: Google's cache-write cost is real but is billed as
+finding rather than a shrug: Gemini's cache-write cost is real but is billed as
 **storage by duration**, which a struct of pure counts cannot express. This is
-the chapter's flagged "known gap", and **the vendor is Google**. Naming it makes
+the chapter's flagged "known gap", and **the vendor is Gemini**. Naming it makes
 the gap concrete instead of hypothetical. (Anthropic has no duration billing at
 all — *"Cache breakpoints themselves don't add any cost"* — its write premium
 *is* the storage charge.)
@@ -321,7 +321,7 @@ is not support. Worth a line in the ch4 parking file, not in ch2.
 **1.25×**, 1-hour write **2×**, read **0.1×** — except Fable 5.1 and Mythos 5.1,
 where reads are **0.025×**. "Roughly an order of magnitude cheaper" is right as
 a rule and *understates* the newest models fourfold. Gemini's cached discount is
-**90%** on 2.5+ (75% was 2.0). Date-stamp any absolute price: Google's tables
+**90%** on 2.5+ (75% was 2.0). Date-stamp any absolute price: Gemini's tables
 already carry a scheduled 2027-01-01 increase.
 
 **E3. A nested-field double-count trap, free of charge.** Anthropic's
@@ -457,8 +457,8 @@ and one was the grader being right in a way that was bad design.
 | Vendors disagree on subset vs disjoint usage | **VERIFIED**, understated (M7) |
 | Cache reads ≈ an order of magnitude cheaper | **VERIFIED** as a rule, exceptions (E2) |
 | Cache writes cost more than plain input | **VERIFIED** |
-| One vendor bills cache storage by duration | **VERIFIED** — it is Google (M6) |
-| Google errors on another model's thinking | **FALSIFIED** (M2) |
+| One vendor bills cache storage by duration | **VERIFIED** — it is Gemini (M6) |
+| Gemini errors on another model's thinking | **FALSIFIED** (M2) |
 | Anthropic silently drops it | **VERIFIED but directional** (M2) |
 | Gemini Interactions signs thought and built-in tool steps, never function calls | **VERIFIED** |
 | Legacy `generateContent` 400s on a `functionCall` replayed without its signature | **VERIFIED**, Gemini 3.x only |

@@ -509,7 +509,7 @@ func checkGeminiRequest(c *Check, body string) {
 		c.failf("gemini: the tool result was not rendered as a functionResponse part")
 	}
 	if strings.Contains(body, "sig-exhibit-1") {
-		c.failf("gemini: replay material issued by an Anthropic model was sent to Google")
+		c.failf("gemini: replay material issued by an Anthropic model was sent to Gemini")
 	}
 }
 

@@ -75,7 +75,25 @@ code agrees with the amended text; where they differ, the outline is now right.
 
 ---
 
-## 4. New task: plant the easter egg (P7)
+## 4. Already applied — do not revert
+
+The vendor enum was renamed **`VendorGoogle` → `VendorGemini`**, and the
+marshaled string `"google"` → `"gemini"`, across the outline, the solution, and
+the grader. Build is clean, gofmt is clean, reference still scores 100/100, all
+16 mutants still detected.
+
+This follows a standing rule now in `book/voice.md`: **name the API and the
+model family, never the company.** It reads more naturally anyway — developers
+say "the Gemini API" as a peer of "the Anthropic API."
+
+One deliberate exception you must preserve: **verbatim wire identifiers stay
+exactly as they appear on the wire.** `GoogleSearch` and `GoogleMaps` are
+literal tool names in the discovery document; renaming them would make the
+technical record false. If you touch `ch02-wire-verification.md`, leave them.
+
+---
+
+## 5. New task: plant the easter egg (P7)
 
 `book/course-policy.md` P7 requires the payload
 
@@ -97,7 +115,7 @@ Constraints:
 
 ---
 
-## 5. Acceptance
+## 6. Acceptance
 
 - `solutions/ch02` implements amended §2.4a exactly; reference still scores
   **100/100**.

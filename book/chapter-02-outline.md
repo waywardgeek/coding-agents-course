@@ -139,8 +139,8 @@ suggests. This seam is not mainly for people running three models. It is for
 people running one.
 
 You do not have to add a competitor for the wire format underneath you to
-change. **As of September 2026, Google has deprecated the API this project
-uses, and its replacement — the Interactions API — is not yet available on
+change. **As of September 2026, the Gemini API this project uses is
+deprecated, and its replacement, the Interactions API, is not yet available on
 Vertex AI, which is the access path many corporate users are required to
 take.** The old surface is marked for removal and the new one cannot be
 reached from where they stand. That is not a hypothetical migration used to
@@ -159,10 +159,10 @@ bound to the surface that produced it. `SurfaceInteractions` is in the enum
 because this was foreseeable, not because it was foreseen.
 
 > *Authorial note: keep this receipt-shaped and dated, per `voice.md`. The
-> verifiable facts — a deprecated surface, a replacement absent from Vertex —
-> are devastating on their own and need no help. Do not source the claim to
-> anything internal to Google; the public record carries it, and the book's
-> author works there.*
+> verifiable facts, a deprecated surface and a replacement absent from Vertex
+> AI, are devastating on their own and need no help. Name the API, never the
+> company — the public record carries the claim, and a reader can check it
+> without trusting us.*
 
 ---
 
@@ -404,15 +404,15 @@ type Surface uint8
 // never populated is detectable instead of silently meaning "Anthropic".
 const (
     VendorAnthropic Vendor = iota + 1
-    VendorGoogle
+    VendorGemini
     VendorOpenAI
 )
 
 const (
     SurfaceMessages Surface = iota + 1 // Anthropic
     SurfaceChatCompletions             // OpenAI — what Exhibits A–C speak
-    SurfaceGenerateContent             // Google  — what Exhibits A–C speak
-    SurfaceInteractions                // Google's replacement surface
+    SurfaceGenerateContent             // Gemini — what Exhibits A–C speak
+    SurfaceInteractions                // Gemini's replacement surface
     SurfaceResponses                   // OpenAI's newer surface
 )
 
@@ -483,7 +483,7 @@ it replaces.
 
 Measured 2026-09-12: signatures harvested from four Gemini models and replayed
 across all sixteen pairings were **accepted without error, 16 of 16**. So
-"Google rejects another model's thinking" is simply false. What Google rejects
+"Gemini rejects another model's thinking" is simply false. What Gemini rejects
 is a signature that is **corrupt**, or one **missing** from a replayed
 `functionCall` (Gemini 3.x; 2.5 returns 200). Anthropic's drop is real but
 **directional**: it reads its own thinking and that of *earlier* models, and
@@ -492,17 +492,17 @@ modified.
 
 | vendor | what it validates | how it fails |
 |---|---|---|
-| Google | signature **integrity** | loud — 400 on corrupt or missing |
+| Gemini | signature **integrity** | loud — 400 on corrupt or missing |
 | Anthropic | model **binding** | quiet — drops what this model cannot read |
 
 The contrast is therefore about **integrity, not authorship** — and the rule of
-this book survives it intact: **the loud failure is the good one.** Google's 400
+this book survives it intact: **the loud failure is the good one.** Gemini's 400
 costs you an afternoon. Anthropic's silence costs you a subtly worse agent that
 still passes every test: reasoning quietly discarded, nothing in the logs, no
 way to tell from the outside. Exactly the shape §2.6 forbids when it insists
 that media asymmetry must raise rather than drop.
 
-*(16 of 16 is HTTP-level acceptance. Whether Google's backend* honors *a foreign
+*(16 of 16 is HTTP-level acceptance. Whether the Gemini backend* honors *a foreign
 signature is not observable from outside the API, so the claim in print is
 "accepted without error" — never "honored".)*
 
@@ -652,7 +652,7 @@ cannot express "remove every tool call and result older than the last
 for first.
 
 **Compaction by position versus compaction by category.** The common framework
-approach — Google's ADK does this — is to replace the oldest *portion* of
+approach — one widely used agent SDK does this — is to replace the oldest *portion* of
 history with an LLM-written summary. That is compaction by **position**: it
 discards whatever happens to be old, valuable or not, and what it loses is
 unpredictable, because a summary is lossy in ways nobody enumerated.
@@ -998,21 +998,20 @@ can read.
 > because the paragraph under it proves the pattern, not because it is vivid.
 > Do not let a later editing pass separate them.
 
-**Google's API fails in ways that do not announce they are Google's:** a request
+**The Gemini API fails in ways that do not announce themselves:** a request
 that returns nothing at all, an error that describes a problem you do not have,
 a silence indistinguishable from a bug in your own assembly code.
 
 **The receipt is this book.** As of September 2026, the Gemini surface this
 chapter teaches is deprecated. Its replacement, the Interactions API, is not
-available on Vertex AI — the platform Google sells to exactly the enterprises
-most likely to be reading this. So the chapter documents the deprecated
-surface, because that is the one you can actually reach from where Google put
-you. When Vertex catches up, this book will need a second edition: not because
+available on Vertex AI, the access path many corporate readers of this book are
+required to take. So the chapter documents the deprecated surface, because that
+is the one they can actually reach from where they stand. When Vertex catches up, this book will need a second edition: not because
 anything about agent architecture changed, but because a vendor deprecated a
 surface before shipping the replacement to its own enterprise platform.
 
-**And there is no event to subscribe to.** Google deprecated the old surface
-without shipping any way to learn when the new one reaches Vertex. So the
+**And there is no event to subscribe to.** The old surface was deprecated
+without shipping any way to learn when the new one reaches Vertex AI. So the
 migration path is a polling loop with a human in it. I checked a week ago. What
 is the correct interval for polling a vendor's roadmap — weekly? monthly? — is
 left as an exercise to the reader, and it is the only exercise in this book with
