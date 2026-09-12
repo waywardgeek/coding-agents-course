@@ -64,6 +64,11 @@ type Ch2Result struct {
 	Redacted    map[string]string // render of a log containing a Redacted event
 	RedactedErr map[string]string
 
+	// ThoughtReplay is a Gemini render of a Gemini-authored log whose tool
+	// call carries per-call replay material (ToolCallPart.Opaque).
+	ThoughtReplay    string
+	ThoughtReplayErr string
+
 	// ephemera phase
 	Ephemera *VendorSession
 
@@ -177,7 +182,22 @@ func Ch2Run(bin string) (*Ch2Result, error) {
 		}
 	}
 
-	// --- phase 5: dump -> render in a FRESH process ------------------------
+	// --- phase 4b: replay per-call opaque material back to its own model ----
+	// ExhibitLog cannot test this: its tool call carries no opaque material,
+	// and its provenance is Anthropic, so a correct renderer would withhold
+	// the material from Gemini by design and the assertion would pass
+	// vacuously. This fixture is Gemini-authored so the same-model test says
+	// yes and the signature must actually appear on the wire.
+	thoughtLog := filepath.Join(work, "thought-replay.log")
+	if err := os.WriteFile(thoughtLog, []byte(GeminiReplayLog), 0o644); err != nil {
+		return nil, err
+	}
+	tout, terr, _ := runOnce(bin, work, vendorEnv("gemini", "", work), "render", thoughtLog)
+	res.ThoughtReplay = tout
+	if strings.TrimSpace(tout) == "" {
+		res.ThoughtReplayErr = terr
+	}
+
 	if s := res.Session["anthropic"]; s != nil && strings.TrimSpace(s.DumpOut) != "" {
 		rt := filepath.Join(work, "roundtrip.log")
 		if err := os.WriteFile(rt, []byte(s.DumpOut), 0o644); err == nil {

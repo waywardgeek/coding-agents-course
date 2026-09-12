@@ -244,3 +244,22 @@ func usageProjection(u map[string]any) string {
 		f("input"), f("cache_write"), f("cache_read"), f("output"),
 	}, "/")
 }
+
+// GeminiReplayLog exercises ToolCallPart.Opaque, which ExhibitLog cannot.
+//
+// Two properties are required at once and ExhibitLog has neither:
+//
+//  1. the tool call must CARRY opaque material (ExhibitLog's does not), and
+//  2. it must have been produced by the model we render back to, or a correct
+//     renderer withholds it by design and the assertion passes vacuously.
+//
+// So the provenance here is Gemini, and the model matches ch2RequestedModel
+// ("gemini") exactly — vendor, model AND surface, since all three participate
+// in the same-model test. Replaying a functionCall to Gemini 3.x WITHOUT its
+// signature is a 400, which is the entire reason §2.4a grew the field.
+const GeminiReplayLog = `{"log_version":1}
+{"seq":1,"type":"message_received","time":"2026-01-01T00:00:00Z","message":{"actor":"human","parts":[{"type":"text","text":"Check the deploy script."}]}}
+{"seq":2,"type":"response_ended","time":"2026-01-01T00:00:01Z","response":{"parts":[{"type":"text","text":"Reading it now."},{"type":"tool_call","call_id":"gemini_call_1","from":{"vendor":"gemini","model":"gemini-3.5-flash-course","surface":"generate_content"},"name":"read_file","args":{"path":"deploy.sh"},"opaque":"sig-bound-to-this-call"}],"usage":{"input":40,"cache_write":0,"cache_read":0,"output":12},"from":{"vendor":"gemini","model":"gemini-3.5-flash-course","surface":"generate_content"}}}
+{"seq":3,"type":"tool_called","time":"2026-01-01T00:00:02Z","tool":{"call_id":"gemini_call_1","name":"read_file","args":{"path":"deploy.sh"}}}
+{"seq":4,"type":"tool_returned","time":"2026-01-01T00:00:03Z","tool":{"call_id":"gemini_call_1","parts":[{"type":"text","text":"#!/bin/sh\nexec ./serve"}]}}
+`

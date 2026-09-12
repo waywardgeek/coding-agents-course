@@ -277,10 +277,67 @@ func ch2SeamRender(r *Ch2Result) Check {
 	checkAnthropicRequest(&c, r.Render["anthropic"])
 	checkOpenAIRequest(&c, r.Render["openai"])
 	checkGeminiRequest(&c, r.Render["gemini"])
+	checkGeminiThoughtReplay(&c, r.ThoughtReplay, r.ThoughtReplayErr)
 	if c.Passed {
 		c.Details = append(c.Details, "Exhibit A (three authorships) and Exhibit B (the merged message) both correct")
+		c.Details = append(c.Details, "per-call replay material survives a Gemini round trip")
 	}
 	return c
+}
+
+// checkGeminiThoughtReplay grades ToolCallPart.Opaque on the render side.
+//
+// Gemini's thought signature is not a standalone thinking block: it arrives as
+// a SIBLING KEY of functionCall, bound to that one call. Replay the call to
+// Gemini 3.x without it and the API answers 400, which is why §2.4a carries a
+// field for per-call material at all. A student who stores opaque material
+// only as a standalone part has nowhere to put this, and their agent breaks in
+// Chapter 3 rather than here — so it is graded here.
+func checkGeminiThoughtReplay(c *Check, body, stderr string) {
+	if strings.TrimSpace(body) == "" {
+		c.failf("gemini: `render` produced nothing for the thought-replay log (stderr: %.200s)",
+			stderr)
+		return
+	}
+	m := decode(c, "gemini(thought-replay)", body)
+	if m == nil {
+		return
+	}
+	contents, _ := m["contents"].([]any)
+	if len(contents) == 0 {
+		c.failf("gemini: no `contents` array in the thought-replay render")
+		return
+	}
+	found := false
+	for _, raw := range contents {
+		turn, _ := raw.(map[string]any)
+		parts, _ := turn["parts"].([]any)
+		for _, p := range parts {
+			part, _ := p.(map[string]any)
+			if _, isCall := part["functionCall"]; !isCall {
+				continue
+			}
+			found = true
+			sig, ok := part["thoughtSignature"]
+			if !ok {
+				c.failf("gemini: the replayed functionCall carries no `thoughtSignature`. " +
+					"The log's tool call has opaque material recorded against this exact " +
+					"model, so it must be replayed as a sibling key of functionCall. " +
+					"Gemini 3.x answers 400 when a replayed functionCall is missing its " +
+					"signature — this is the failure ToolCallPart.Opaque exists to prevent.")
+				continue
+			}
+			if s, _ := sig.(string); s != "sig-bound-to-this-call" {
+				c.failf("gemini: the replayed functionCall carries thoughtSignature %v, but the "+
+					"log recorded %q against this call. Opaque material is carried "+
+					"verbatim and never reconstructed.", sig, "sig-bound-to-this-call")
+			}
+		}
+	}
+	if !found {
+		c.failf("gemini: the thought-replay render contains no `functionCall` part at all; " +
+			"the assistant turn that issued the tool call was dropped from the request.")
+	}
 }
 
 func decode(c *Check, vendor, body string) map[string]any {

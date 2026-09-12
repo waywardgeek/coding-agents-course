@@ -140,6 +140,16 @@ var mutations = []mutation{
 		edits:    []edit{{"main.go", `emit\(out, map\[string\]string\{"assistant": reply\}\)`, `emit(out, map[string]string{"reply": reply})`}},
 		wantFail: []string{"ch1parity", "session"},
 	},
+	{
+		// The mutant for the field §2.4a grew. Before GeminiReplayLog existed
+		// this mutation scored 100/100 — the field was graded by nothing in
+		// either direction, so a student could omit it and be told Chapter 2
+		// was perfect, then meet the 400 in Chapter 3.
+		name:     "gemini-call-opaque-dropped",
+		why:      "keeping opaque material only as a standalone part, so material bound to ONE call is lost; replaying a functionCall without its signature is a Gemini 3.x 400",
+		edits:    []edit{{"gemini.go", `p\.ThoughtSignature = call\.Opaque`, `_ = call.Opaque`}},
+		wantFail: []string{"seam-render"},
+	},
 }
 
 func TestCh2ReferenceSolutionScores100(t *testing.T) {
