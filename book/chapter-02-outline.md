@@ -907,12 +907,31 @@ nearly free" is true because the third was *easy*, not because the seam was
 right. The claim would pass for the wrong reason. Put the alien one last and
 the prediction is tested in the direction that can actually falsify it.
 
-Tell the reader to notice what each one costs them. If the third takes twenty
-minutes after the second took two hours, they have felt the thing this chapter
-is about in a way no paragraph delivers. And if it does *not* — if Gemini
-forces them back into the context to add a field — then their seam is wrong,
-they have learned it on day one, and the chapter has done its job by losing its
-own bet.
+Tell the reader to notice what each one costs them — and be exact about the
+unit, because the obvious one is wrong. **The bet is about context changes, not
+clock time.** If a renderer lands without sending them back into `Context` to
+add a field, the seam held for that vendor. If one forces a field in, the seam
+was missing something, they have learned it on day one, and the chapter has
+done its job by losing its own bet.
+
+**Do not let them measure this in hours.** The third implementation will take
+longer than the second no matter how good their seam is, and a student timing
+themselves will draw exactly the wrong conclusion from that. Google's API fails
+in ways that do not announce they are Google's: a request that returns nothing
+at all, an error that describes a problem you do not have, a silence that is
+indistinguishable from a bug in your own assembly code. Hours spent there are
+evidence about the vendor, not about the design. Context diffs are the only
+honest instrument, which is convenient, because they are also the only one the
+grader can read.
+
+**This is the second reason the order is fixed, and the more useful one.**
+Building against the most honest API first is not a difficulty ramp, it is
+establishing a control. When the third vendor goes quiet, you need to already
+know — not hope — that your context assembly is correct, or you cannot tell
+their bug from yours and will spend the afternoon apologizing to a machine that
+was wrong. Order your implementations so the ambiguous failures arrive *after*
+you have something trustworthy to bisect against. That habit outlives every
+vendor named in this chapter.
 
 Two points always fit a line. A student can shape the interface around vendor
 A, bend vendor B to fit it, and call the result a seam. The third

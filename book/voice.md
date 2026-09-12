@@ -38,6 +38,31 @@ Corollary: never inflate. No productivity multipliers, no "40 years of
 experience," no vendor claims we haven't verified. One unearned number costs
 more trust than ten jokes.
 
+## Criticizing vendors: receipts, never venting
+
+We will say hard things about vendor APIs, and we should — they are true, they
+are useful, and a reader who has fought the same silence will feel seen. The
+form is what decides whether it reads as evidence or as an axe to grind.
+
+**Every criticism carries a receipt.** A reproducible behavior, a status code, a
+measured number, a request you can paste. *"Gemini 3.x returns 400 on a missing
+thought signature but 200 on another model's"* is unarguable and taught us
+something. *"Gemini's API is terrible"* is a tweet, and it spends exactly the
+credibility the receipts bought two pages earlier.
+
+**Frustration is not an argument, because the reader cannot verify it.** Say
+what the API did. The reader supplies the feeling, and it lands harder coming
+from them.
+
+**Date the claim.** Vendors ship fixes. "As of September 2026" costs four words
+and prevents a corrected bug from making the whole book look careless. A stale
+complaint is worse than no complaint: it tells the reader our measurements have
+an expiry date we did not track.
+
+**Criticize the API, not the company.** The former is a technical claim we
+verified. The latter is a fight we cannot win in a book that takes a year to
+reach print.
+
 ## Jokes are welcome, and they have to work
 
 Humor is allowed and encouraged. It is not decoration — it is load-bearing like
