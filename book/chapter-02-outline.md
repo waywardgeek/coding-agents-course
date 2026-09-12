@@ -61,9 +61,9 @@ check asks whose code it is.
 
 ## §2.0 Cold open — the seam I got wrong, and what it cost
 
-Open with the author's own failure, told plainly, because it is the most
-expensive mistake in this book and it looks completely reasonable while you are
-making it.
+Open with my own failure, told plainly, because it is the most expensive
+mistake in this book and it looks completely reasonable while you are making
+it.
 
 The sequence:
 
@@ -78,14 +78,14 @@ The sequence:
    drift independently, that every bug must be fixed three times, and that
    two of the three fixes will be forgotten.
 
-Then the part most books leave out. **The remedy was worse than the disease.**
+**The remedy was worse than the disease.**
 The correct seam was eventually designed — one context, one renderer per
 vendor, one parser per vendor — and delivered as a big-bang rewrite. A year
 later the migration is still not finished. The product works. It is also
-semi-broken in ways its author has not finished cataloguing, and some bugs have
-not yet been reported to anyone, including himself.
+semi-broken in ways I have not finished cataloging, and some bugs have
+not yet been reported to anyone, including me.
 
-The lesson has two halves and readers usually get taught only the first:
+The lesson has two halves:
 
 > **The seam was right. Shipping it as a rewrite was the mistake.**
 > Cutting a seam late does not cost you one refactor. It costs you a tail —
@@ -129,7 +129,7 @@ just paid 30,000 lines to learn.
 
 A reader who does not trust this promise will over-engineer defensively, and
 defensive over-engineering is the failure mode this book argues against
-everywhere else. So: trust it. If a later chapter makes you delete something
+everywhere else. If a later chapter makes you delete something
 from this one, that is our bug, not yours.
 
 ### "But I only use one vendor"
@@ -168,8 +168,6 @@ because this was foreseeable, not because it was foreseen.
 
 ## §2.1 History ≠ Context
 
-The distinction the whole book rests on.
-
 - **History** is an append-only event log. What happened, in order, forever.
   It is the truth and it is never edited.
 - **Context** is the vendor-independent state you get by replaying that log.
@@ -177,8 +175,8 @@ The distinction the whole book rests on.
 - **The request** is what a *renderer* makes from context for one specific
   vendor. It is disposable and it is a lie by omission — necessarily.
 
-Three consumers, three needs: the renderer reads context; the GUI reads the
-log; the auditor reads the log.
+Three consumers, two needs: the renderer reads the context; the GUI and the
+auditor read the log.
 
 **Full re-send is the price of ownership.** Every request carries the entire
 conversation. You pay for it in tokens (largely refunded by prefix caching, a
@@ -279,10 +277,8 @@ Chapter 2 executes no tools. It **renders logs that contain tool events**,
 supplied by the exercise. The student therefore writes a reducer that handles
 events it cannot yet produce.
 
-That is not an accident of sequencing; it is the write-once discipline in
-miniature, and it is worth saying so. You are building the shape before the
-capability, because the shape is what determines whether the capability can be
-added without a rewrite.
+That is deliberate. You are building the shape before the capability, because
+the shape determines whether the capability can be added without a rewrite.
 
 ### Turn states
 
@@ -332,8 +328,8 @@ field on the context that someone appends to.
 For now, a constant string is a perfectly good renderer. The rule is only about
 **where it comes from**.
 
-Why this matters enough to state before we need it: the system prompt is the
-most abused surface in agent engineering, and the abuse has a predictable
+The system prompt is the easiest surface in an agent to abuse, and the abuse
+has a predictable
 shape. First someone describes the tools in it by hand. Then the descriptions
 drift from the actual tools. Then part of it is generated and part is
 hand-written, and no one can say which. By the time it is 400 lines nobody will
@@ -475,9 +471,6 @@ useless for Gemini's `thoughtSignature`, which arrives as a *sibling key of
 per-call replay material cannot produce a valid Gemini 3.x request after a tool
 call at all — the API answers 400. So the field is here. §2.6 tells the story of
 how it got here, because the chapter bet against needing it and lost.
-
-**`Provenance` is the subtle one, and it is where a seam that looks finished
-turns out not to be.**
 
 The naive version of this field is `Vendor string`. That is wrong, and it is
 wrong in a way you will not discover until a user switches models mid
@@ -635,8 +628,7 @@ it is wrong twice over:
   permanently. The context does not need to remember that a redaction
   *happened*; it needs to hold the content that redaction *produced*.
 
-Deleting it removes a field and a failure mode at the same time, which is
-usually the sign of a correct simplification. A redaction is not metadata about
+Deleting it removes a field and a failure mode at the same time. A redaction is not metadata about
 content — **it is content**, and the context holds the result of replaying the
 log, exactly as §2.1 promised.
 
@@ -650,13 +642,14 @@ none.
 ### Redaction is a family, not a flag
 
 The shape above — a **span**, a **level**, and an optional replacement — looks
-like over-modelling for a chapter that only ever stubs a tool result. It is
+like over-modeling for a chapter that only ever stubs a tool result. It is
 here because the alternative is demolishing it later, and because the thing it
 grows into is the mechanism that keeps an agent alive past its context window.
 
 The naive design is `Target Seq` plus a boolean: this event was redacted. It
 cannot express "remove every tool call and result older than the last
-`save_memory`," which is the single most valuable compaction there is.
+`save_memory`," which is the compaction this chapter's students will reach
+for first.
 
 **Compaction by position versus compaction by category.** The common framework
 approach — Google's ADK does this — is to replace the oldest *portion* of
@@ -665,11 +658,12 @@ discards whatever happens to be old, valuable or not, and what it loses is
 unpredictable, because a summary is lossy in ways nobody enumerated.
 
 Compaction by **category** discards a *kind* of content wherever it appears.
-And the categories are wildly unequal: in real coding sessions, tool results
-and tool-call arguments together are the clear majority of a conversation's
-tokens, while carrying almost none of its continuity. The agent's reasoning,
-its decisions, its sense of what it is doing — those are cheap and they are the
-part you cannot regenerate.
+And the categories are wildly unequal. Measured across CodeRhapsody coding
+sessions in 2026: tool results were about **42%** of conversation history, and
+tool-call arguments another **30%**. Roughly three-quarters of the tokens, and
+they carry almost none of the continuity. The agent's reasoning, its decisions,
+its sense of what it is doing — those are cheap and they are the part you
+cannot regenerate.
 
 Which yields the rule:
 
@@ -841,15 +835,11 @@ Actors: `Human`, `Agent`, `System`, `Tool`. Rooms group a conversation. There
 is deliberately **no `To` field** — addressing is a property of the room, not
 of the message, and adding `To` invites a routing layer the book does not want.
 
-The `Tool` actor looks like over-modelling until §2.6, where it becomes the
-single sharpest demonstration in the chapter. Hold that thought.
+The `Tool` actor looks like over-modeling until §2.6.
 
 ---
 
 ## §2.6 The seam — renderers and parsers
-
-**The centerpiece.** Everything before this exists to make this section
-possible.
 
 > The context is the truth. A **renderer** turns truth into one vendor's
 > request. A **parser** turns one vendor's response back into truth.
@@ -951,7 +941,7 @@ is an `ErrorOccurred`, not a response.
 - **Decline vendor stateful conversation APIs.** Server-side threads (or
   `previous_response_id`-style continuations) trade away the ability to edit
   history. Editing history is a coding agent's core tool: redaction, replay,
-  context surgery. Own the history or you cannot build the product.
+  compaction. Own the history or you cannot build the product.
 - **Media asymmetry is a LOUD error.** An audio part rendered for a text-only
   model raises; it never silently drops. Fallbacks convert an invariant
   violation into silently-wrong output.
@@ -996,26 +986,32 @@ done its job by losing its own bet.
 
 **Do not let them measure this in hours.** The third implementation will take
 longer than the second no matter how good their seam is, and a student timing
-themselves will draw exactly the wrong conclusion from that. Google's API fails
-in ways that do not announce they are Google's: a request that returns nothing
-at all, an error that describes a problem you do not have, a silence that is
-indistinguishable from a bug in your own assembly code. Hours spent there are
-evidence about the vendor, not about the design. Context diffs are the only
-honest instrument, which is convenient, because they are also the only one the
-grader can read.
+themselves will draw exactly the wrong conclusion from that. Hours are evidence
+about the vendor, not about the design. Context diffs are the only honest
+instrument, which is convenient, because they are also the only one the grader
+can read.
+
+> **Authorial note — receipt needed (2026-09-12).** An earlier draft
+> characterised Google's failures here as "a request that returns nothing at
+> all, an error that describes a problem you do not have." That is Bill's
+> direct experience and I believe it, but it is an impression, not a
+> measurement, and §2.5 four hundred lines earlier prints a 4×4 cross-model
+> matrix. Venting next to that much evidence spends the credibility the
+> evidence bought. **Bill: one concrete, dated case — a request that returned
+> an empty body, or an error string that named the wrong cause — and it goes
+> back in, sharper.** Until then the principle below carries the passage,
+> because it does not depend on the characterisation being true.
 
 **This is the second reason the order is fixed, and the more useful one.**
 Building against the most honest API first is not a difficulty ramp, it is
-establishing a control. When the third vendor goes quiet, you need to already
-know — not hope — that your context assembly is correct, or you cannot tell
-their bug from yours and will spend the afternoon apologizing to a machine that
-was wrong. Order your implementations so the ambiguous failures arrive *after*
-you have something trustworthy to bisect against. That habit outlives every
-vendor named in this chapter.
+establishing a control. When a vendor's failure is ambiguous — and one of them
+always is — you need to already know, not hope, that your context assembly is
+correct, or you cannot tell their bug from yours and will spend the afternoon
+apologizing to a machine that was wrong. Order your implementations so the
+ambiguous failures arrive *after* you have something trustworthy to bisect
+against. That habit outlives every vendor named in this chapter.
 
-**And here is how the bet actually came out, which this chapter prints rather
-than hides.** Built in the fixed order, verified against live APIs on
-2026-09-12:
+Built in the fixed order, verified against live APIs on 2026-09-12:
 
 | renderer | context changes forced | vendor file |
 |---|---|---|
@@ -1030,10 +1026,7 @@ the context nothing at all. Gemini then forced exactly one field, for the reason
 `OpaquePart` had nowhere to put it.
 
 Bent, then, not broken — so the chapter ships that field in §2.4a and tells you
-it lost, instead of letting you meet it as a 400 on a Tuesday. A design that
-survives its own falsification test with one field's worth of damage is a design
-worth copying. A book that prints the result either way is the only kind whose
-predictions were worth reading in the first place.
+it lost, instead of letting you meet it as a 400 on a Tuesday.
 
 Two points always fit a line. A student can shape the interface around vendor
 A, bend vendor B to fit it, and call the result a seam. The third
@@ -1063,7 +1056,7 @@ specific things.
 **Four ways non-determinism gets into a renderer**, named because the failure
 message only tells you *that* two renders differed: the clock, a randomly
 generated id, Go's deliberately randomized map iteration order, and iteration
-over a set. The last two are the same bug in different hats, and they are why
+over a set. The last two are the same bug, and they are why
 wire types should be structs with ordered fields rather than `map[string]any` —
 the map serializes differently on some future run, on some future machine, and
 never on the one where you tested.
@@ -1206,13 +1199,8 @@ and three ways in and out of it.**
    had" is defensible even with the seam at 35, and it honors the standing
    guard from Chapter 1's review.
 5. ~~**Should Chapter 2 state the roadmap?**~~ **RULED (2026-09-12): yes —
-   as a contract, not a table of contents.** See §2.0, "The contract, stated
-   once." The valuable part is not the list of coming chapters, which may be
-   reordered; it is the promise that nothing here gets deleted later, and the
-   instruction that follows from it: build the simplest thing that satisfies
-   this chapter. A reader who distrusts the promise over-engineers
-   defensively, which is the failure mode the book argues against everywhere
-   else.
+   as a contract, not a table of contents.** Drafted in §2.0, "The contract,
+   stated once."
 6. ~~**Does the goal stack belong in Chapter 2's `Context`?**~~ **RULED
    (2026-09-12): no goal stack.** It arrives with context engineering, which
    is also where the policy that needs it is defined. Deferral is cheap here
