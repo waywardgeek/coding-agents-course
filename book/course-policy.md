@@ -319,5 +319,17 @@ purpose, because it builds shape ahead of capability and says so. The rule
 bites when the book advertises a field as load-bearing *now* and the grader
 lets a student omit it.
 
-This applies retroactively. Chapter 1's grader predates the rule and has not
-been audited by deletion.
+This applies retroactively, but read what it asks for carefully, because
+Chapter 1 already passes the easy half of it. Chapter 1 ships ten mutants with
+exact-set assertions and a no-defect control, and every one of its seven check
+ids is killed by at least one mutant. That proves the grader **detects ten
+specific breakages**. It does not prove that **every behavior the reference
+solution implements is required**, and those are different claims: Chapter 2's
+hole sat inside a check that already had mutants. Check-level coverage is not
+property-level coverage.
+
+The distinction is in what gets mutated. Chapter 1 breaks a purpose-built
+mutant student and asserts which checks notice. The pass that found the
+Chapter 2 hole deletes a behavior **from the reference solution** and asks
+whether the score still says 100. Run both. The second one is the one that
+catches a promise the book made and the grader never collected on.
