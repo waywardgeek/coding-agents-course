@@ -430,7 +430,7 @@ const (
     RedactResult   Redaction = iota + 1 // tool result content -> stub; the call survives
     RedactTool                          // call and result both go; visible reasoning survives
     RedactDialogue                      // prose and reasoning go; survivors are defined by the compaction policy
-    RedactSummary                       // the span is replaced by compressed prose
+    RedactSummary                       // the whole span collapses to ONE entry of compressed prose
 )
 ```
 
@@ -684,6 +684,20 @@ recoverable (§2.2's greppable log, and Chapter 3's on-disk tool output), and
 free of storage that grows. Only `RedactSummary` stores a `Replacement`,
 because only there is the new content something an LLM wrote and nobody can
 recompute.
+
+**A summary is a fold; the other three levels are filters.** `RedactResult`,
+`RedactTool` and `RedactDialogue` rewrite each entry in the span
+independently: N entries in, N entries out. `RedactSummary` collapses the span
+to a **single** entry carrying the `Replacement`. That distinction is worth
+stating because the tidy implementation is the wrong one: four levels, one loop
+over the span, one `case` each. Written that way the summary is copied into
+every entry it was meant to replace, and compaction *grows* the context it was
+called to shrink. (Measured on the reference solution before the fix: a
+three-entry span produced three copies of its own summary.) The collapsed entry
+takes `Seq = From`, the span's own start, which is already in the event and
+therefore deterministic under replay. Its `Actor` is `System`, because a span
+can cross Human, Agent and Tool, and a summary of several speakers is not any
+of their speech. It is compaction output.
 
 **And compaction is an event.** It goes in the log like everything else, which
 is what lets both of this chapter's promises hold at once: the log stays
@@ -1143,7 +1157,7 @@ finish Chapter 2.
 | `redaction` | 10 | a `Redacted` event names its target; content absent from later renders |
 | `ephemera` | 10 | delivered in exactly one request, and absent from every later one |
 | `usage` | 10 | all four token categories normalized from all three vendors into one **disjoint** set — cache reads and writes separated from plain input, summing to the billable total |
-| `seam-render` | 15 | one log renders correctly to all three vendor request shapes |
+| `seam-render` | 15 | one log renders correctly to all three vendor request shapes, and per-call replay material survives a round trip back to the model that issued it |
 | `seam-parse` | 15 | three vendor responses produce contexts agreeing on **everything the model said** — actors, text, tool-call names, canonicalized arguments — while `Provenance`, vendor-issued tool-call ids, and model-bound opaque material legitimately differ |
 
 **Sum: 100.**
@@ -1157,6 +1171,17 @@ Notes on the weighting:
   student who gets the message shapes right but the accounting wrong is told
   *which* half failed, instead of losing a large undifferentiated block.
   Parsing is where vendor shape hides, and where the author's own seam failed.
+- **`seam-render` absorbed the per-call replay property instead of becoming a
+  tenth check.** The itemization argument above is about *diagnosis*, and
+  distinct failure messages satisfy it; dividing points is for when a student
+  can plausibly have one of two skills and not the other. Rendering the right
+  request shape and handing a model back its own opaque material are the same
+  skill on the same wire format, so the property folds in and the 15 stands.
+  What it costs is a second *fixture*, not a second assertion. The property
+  needs a log whose provenance matches the render target, and the chapter's
+  main exhibit is Anthropic-authored by design: render that one to Gemini and a
+  correct implementation withholds the signature, so the assertion passes
+  without testing anything.
 - **`ch1parity` stays at 25**, honoring the standing guard from Chapter 1's
   review. Below that, a rewrite that silently breaks Chapter 1's contract
   starts to look survivable.
@@ -1176,6 +1201,38 @@ Notes on the weighting:
   concrete a second time, for free: an ephemeral part arrives as an ordinary
   `MessageReceived` with `Actor: System`, and **the reducer** is what decides it
   is pending rather than dialogue. The capture site does not know, and cannot.
+
+### Two omissions that look alike
+
+Chapter 2 leaves one redaction level ungraded, and it left one struct field
+ungraded until the code was built. They look like the same omission. Only one
+of them was.
+
+`RedactSummary` is ungraded **on purpose**. §2.4a builds the whole redaction
+family and exercises exactly one level of it; the rest is shape ahead of
+capability, cashed in by the context-engineering chapter. An ungraded level
+there is the plan working. It still had a real bug, the fold described in
+§2.4a, which is the distinction to hold onto: a shape can be wrong as well as
+untested, and that one had to be found by hand.
+
+`ToolCallPart.Opaque` was a hole. §2.4a lists it as shipped and needed now, and
+§2.6 prints it as the entire price of the seam bet: the one field standing
+between the student and a 400 the first time a tool call goes back to Gemini.
+When the grader was built, deleting its only use scored **100/100**. A field the
+book advertises as load-bearing must not be omissible for full marks.
+
+What hid the hole is worth more than the hole. Grep the grader for `opaque` and
+you get hits, all of them for the standalone thinking block, which is
+thoroughly graded. The distinction the field exists for, a signature bound to
+one *call* rather than to the *turn*, was exactly the distinction the tests did
+not draw. A field-by-field diff of code against spec reports no drift here and
+is wrong.
+
+The question that finds these is not "does the code implement the spec?" It is
+**"what would still pass if I deleted this?"** That is mutation testing pointed
+at the spec rather than at the code, and it is the first pass to run against
+any grader in this book, including the ones already written. A check that
+cannot fail is a green dashboard with a schema around it.
 
 ### What you are not building
 

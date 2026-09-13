@@ -273,3 +273,51 @@ motives we hid:
   simultaneous students to make a cohort meaningful. Only enrollment data can
   tell us whether that day arrives. Until it does, self-paced is not a
   compromise, it is the correct design for the actual population.
+
+---
+
+## P9. Every grader is audited by deletion, not by reading
+
+A grader is an artifact and it rots exactly the way a design document rots. The
+audit that catches the rot is not "does this check match the spec?" It is
+**"what would still pass if I deleted this?"**
+
+The rule is here because of a measured miss in Chapter 2. `ToolCallPart.Opaque`
+is the one field §2.6 prints as the price of the seam bet, the thing standing
+between the student and a 400 the first time a tool call goes back to Gemini.
+Deleting its only use in the reference solution scored **100/100**. The book
+kept its promise in prose and broke it in the grader.
+
+Two mechanisms produced that, and both generalize:
+
+- **The fixture could not exercise the property.** The exhibit log's tool call
+  carried no opaque material, so there was nothing to fail to replay.
+- **The assertion would have passed vacuously.** The exhibit is
+  Anthropic-authored, and a correct renderer withholds another model's
+  material, so asserting about a Gemini render of it passes while testing
+  nothing.
+
+Note what neither mechanism is: a mismatch between the structs and the spec.
+A field-by-field diff of code against §2.4a reported no drift and was wrong.
+
+So, before a chapter ships:
+
+1. For each check, delete the behavior it claims to protect and confirm the
+   score drops. A check that cannot fail is a green dashboard with a schema
+   around it.
+2. Prefer mutants that assert the **exact set** of failing check ids. A mutant
+   caught by the wrong check is then a finding instead of a pass.
+3. When a mutation expectation misses, ask first whether the grader is right.
+   Over two rounds of Chapter 2 it usually was: of six misses, four were the
+   grader correctly disagreeing with the prediction.
+4. Write a negative control for anything that asserts absence. Absence is the
+   easiest property in the world to satisfy by accident.
+
+Grading a property the chapter deliberately does not exercise is not a
+violation of this rule. Chapter 2 leaves three redaction levels ungraded on
+purpose, because it builds shape ahead of capability and says so. The rule
+bites when the book advertises a field as load-bearing *now* and the grader
+lets a student omit it.
+
+This applies retroactively. Chapter 1's grader predates the rule and has not
+been audited by deletion.
