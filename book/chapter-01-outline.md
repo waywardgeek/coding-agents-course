@@ -20,9 +20,9 @@ hook.
 
 **The gold rush:**
 
-- **SpaceX acquires Cursor (Anysphere), ~$60B all-stock, June 2026** — an AI
+- **SpaceX acquires Cursor (Anysphere), ~$60B all-stock, June 2026**, an AI
   code editor valued above most aerospace companies.
-- **The Windsurf drama** — one product, three suitors, three deal shapes:
+- **The Windsurf drama**, one product, three suitors, three deal shapes:
   OpenAI's ~$3B buyout collapses → a hyperscaler takes leadership + IP in a ~$2.4B
   licensing/acqui-hire → Cognition buys the remaining product, brand, and
   enterprise base.
@@ -35,7 +35,7 @@ coding agent PoC than Windsurf in two weeks. My manager told me to prove it.
 I did. The result was StackAgent — a vibe-coded pile of shit I had to throw
 away. The two weeks were not wasted: the value was never the code, it was
 what I learned building it. I then spent a month writing the initial version
-of CodeRhapsody properly — production-worthy — and that is the direct
+of CodeRhapsody properly, production-worthy, and that is the direct
 ancestor of the agent that is helping me write this book right now.
 
 **Why the story opens the book:**
@@ -45,8 +45,8 @@ ancestor of the agent that is helping me write this book right now.
 2. It states the book's core thesis in miniature: **the code was disposable;
    the learning was the asset.** (The reader will live this arc themselves —
    more than once.)
-3. The pattern that matters: acquirers are buying the **execution layer** —
-   runtimes, orchestration, secure execution — not chat wrappers. The value
+3. The pattern that matters: acquirers are buying the **execution layer**
+   (runtimes, orchestration, secure execution), not chat wrappers. The value
    in an AI coding agent is the systems layer underneath the conversation,
    and that layer is what this book teaches you to build.
 4. Feeding §1.1: a space consolidating at this speed is definitionally
@@ -71,19 +71,19 @@ Not a disclaimer; a full section. The student must leave Chapter 1 able to
   advanced. A framework encodes what its authors anticipated you would need;
   the bleeding edge is precisely what nobody anticipated yet.
 
-**The mechanism, not just the slogan.** Frameworks are generous with *storage*
-and *discovery*, but they **hard-code delivery** — what goes into the request
+**The mechanism.** Frameworks are generous with *storage*
+and *discovery*, but they **hard-code delivery**: what goes into the request
 payload, in what order, at what position. And delivery is where the leverage
 lives. Three concrete capabilities, all real at the raw API surface today,
 that a framework either cannot express or buries:
 
 1. **Mid-turn steering (hints).** The Messages API accepts a `tool_result`
-   and a user `text` block *in the same message* — which is how a human
+   and a user `text` block *in the same message*, which is how a human
    redirects an agent between tool calls without breaking the tool chain.
    Frontier products validate the idea (real-time steering in their UIs) but
    expose it as a product toggle, not an API their frameworks let you reach.
 2. **Ephemeral context placement.** Volatile data (time, screen state, live
-   status) must go *last* in the payload, exactly one copy, never in history —
+   status) must go *last* in the payload, exactly one copy, never in history,
    because delivery *position* is the feature: one wandering timestamp in the
    wrong place destroys prefix caching (a real production case went 0%→98%
    cache hit rate by moving it). Frameworks decide placement for you.
@@ -103,16 +103,16 @@ fine on day one.)
 ## 1.2 Anatomy of a Messages API request
 
 - Endpoint, `x-api-key`, `anthropic-version`, `content-type: application/json`.
-- `model`, `max_tokens` (required — and why the API refuses to guess).
-- `system` — a string outside the messages array (for now, one fixed line).
-- `messages` — the array of `{role, content}`. Three rules, all enforced:
+- `model`, `max_tokens` (required, and why the API refuses to guess).
+- `system`: a string outside the messages array (for now, one fixed line).
+- `messages`: the array of `{role, content}`. Three rules, all enforced:
   roles strictly alternate `user`/`assistant`; the conversation **begins**
   with a `user` message; the **last** message is always the `user`'s —
   otherwise there is nothing to answer. Content is never empty.
 - Response: `content`, `stop_reason`, `usage`.
 
 **The asymmetry that catches everyone once.** The request lets you send
-`content` as a bare string. The response never does — response `content` is
+`content` as a bare string. The response never does: response `content` is
 always a list of typed blocks. Walk it and concatenate the `text` blocks. The
 field has the same name on both sides and a different shape; this is the
 classic day-one stumble.
@@ -187,8 +187,8 @@ counter is deterministic; `make grade` prints them. Live against
 
 ## 1.6 Chat with it
 
-The payoff, and the point of the chapter: an interactive mode — plain
-terminal REPL, live via the course proxy (§1.7) — where the student *talks
+The payoff, and the point of the chapter: an interactive mode, a plain
+terminal REPL live via the course proxy (§1.7), where the student *talks
 to a chatbot they built from raw HTTP*. Encourage playing: give it a personality via the
 system line, ask it about the code that created it, show a friend. This is
 deliberate: confidence and a little pride first. (Ungraded.)
@@ -214,11 +214,11 @@ The awkward truth, taught straight because it is part of the landscape:
 - **Why: the economics of the tool layer.** Every major model advance is
   followed within months by cheap distilled competitors, so raw model access
   is a melting asset. The providers' response is to own the high-value tools
-  on top — Claude Code, Claude Cowork, Codex — and to *discount tokens
+  on top (Claude Code, Claude Cowork, Codex) and to *discount tokens
   consumed through their products* relative to the same tokens via API key.
   The message is explicit: use our agent; don't build your own. This book
-  exists to ignore that message. (Same strategy as §1.0's acquisitions —
-  buying the execution layer — pointed downmarket at individual developers.)
+  exists to ignore that message. (Same strategy as §1.0's acquisitions,
+  buying the execution layer, pointed downmarket at individual developers.)
 - **The course's answer: a proxy — optional.** Students fund a modest amount
   (Stripe) on the course site, and their programs hit the course URL, which
   proxies to Anthropic / Gemini / OpenAI with metered, per-student budgets.
@@ -226,7 +226,7 @@ The awkward truth, taught straight because it is part of the landscape:
   API key, you don't need us**: the entire course runs identically pointed
   straight at the provider. The proxy exists to remove the toll booth, not
   to become one.
-- **The honest cost warning — three meters, and everyone confuses them.**
+- **The honest cost warning: three meters, and everyone confuses them.**
   The course author takes no profit on proxied tokens; tokens cost what they
   cost, direct or proxied. But three very different numbers get fused into
   one scary figure, and they differ by two orders of magnitude. State them
@@ -239,7 +239,7 @@ The awkward truth, taught straight because it is part of the landscape:
   2. **Doing the graded exercises: $0, plus $20–$100 if you want.** Every
      graded exercise runs against a local fake server: no API key, no
      network, **$0**, as many times as you like. Only the optional live
-     smoke tests spend real money, and they are small — budget **$20–$100
+     smoke tests spend real money, and they are small: budget **$20–$100
      for the entire book**, not per chapter. The real cost here is not
      money, it is that the exercises are *sized for an engineer working
      with a coding assistant*. Chapter 2's reference solution is about
@@ -248,7 +248,7 @@ The awkward truth, taught straight because it is part of the landscape:
   3. **Building the real thing afterwards: $1,000–$10,000.** This is the
      number people mean when they say building an agent is expensive, and
      it is almost never your program's own token burn. It is what you will
-     pay **Claude Code or Codex** to help you write it — the assistant
+     pay **Claude Code or Codex** to help you write it, the assistant
      spend it takes an AI-accelerated engineer to produce a coding agent
      good enough to replace Claude Code or Codex. That is the real tuition,
      it goes to the providers, and no route around it exists. It is also
@@ -268,7 +268,7 @@ and budgets. Scope separately.
 **Contract:** the student ships a Go program speaking JSON-lines on stdio:
 grader writes `{"user": "..."}`, program replies `{"assistant": "..."}`, N
 rounds, then EOF → program prints `{"usage": {"input": i, "output": o}}` and
-exits 0. **Go required** — the book's code is Go, and later chapters build on
+exits 0. **Go required**: the book's code is Go, and later chapters build on
 this program.
 
 **Later chapters build on this program — and you can always get a clean
@@ -281,7 +281,7 @@ know nor care whose code they are running: they execute your binary and read
 what it emits, never your source or its history. A chapter you found hard does
 not compound into the next one.
 
-**stdout carries the protocol and nothing else** — one JSON object per line.
+**stdout carries the protocol and nothing else**: one JSON object per line.
 Send logs, progress and diagnostics to **stderr**. A stray `fmt.Println` is a
 protocol violation and will be reported as one. (This is the single most
 common innocent failure in the exercise, because every programmer debugs with
@@ -302,11 +302,11 @@ none:**
 | `ANTHROPIC_API_KEY` | send as the `x-api-key` header |
 | `ANTHROPIC_MODEL` | put in the `model` field |
 
-A student who hardcodes the model passes the fake — which accepts any
-non-empty model — and then breaks on the live path and the proxy, far from
+A student who hardcodes the model passes the fake (which accepts any
+non-empty model) and then breaks on the live path and the proxy, far from
 the cause.
 
-**Grading rig — a fake Anthropic server.** The grader sets
+**Grading rig: a fake Anthropic server.** The grader sets
 `ANTHROPIC_BASE_URL` to a local fake that validates every request and returns
 scripted responses. No API key, no cost, fully deterministic.
 
@@ -316,7 +316,7 @@ violation and judges afterwards, against recorded evidence. It does not
 reject on the first mistake. One run therefore tells you about *all* your
 bugs rather than one bug per run.
 
-**The seven checks — 100 points, and all of them must pass:**
+**The seven checks (100 points, and all of them must pass):**
 
 | check | pts | property |
 |---|---|---|
@@ -338,7 +338,7 @@ Notes on the ones you cannot infer:
   and the last message must be `user`.
 - **`calls`** means exactly one API call per round. Plausible-looking designs
   fail this: a warm-up call, a retry, a second call to summarize.
-- **`replies`** catches the laziest possible cheat — a program that never
+- **`replies`** catches the laziest possible cheat, a program that never
   parses the response at all. It is worth stating precisely *because* it is
   unbeatable: invent the answer and you fail even if everything else passes.
 - **`memory`** is the proof that a conversation exists. The fake plants a
@@ -347,8 +347,8 @@ Notes on the ones you cannot infer:
   only be there if you appended the model's reply and resent everything.
 - **`usage`** is an **exact** match. After stdin closes, report cumulative
   input and output totals equal to the sum of the `usage` fields of every
-  response. The fake's counter is deterministic — one token per four
-  characters, rounded up — which is a *grading device*, **not** a real
+  response. The fake's counter is deterministic (one token per four
+  characters, rounded up), which is a *grading device*, **not** a real
   tokenizer. Infer nothing about real token math from it. Exact matching is
   what catches a program that invents plausible numbers instead of summing.
 

@@ -68,7 +68,7 @@ it.
 The sequence:
 
 1. Build an agent against Anthropic. It works.
-2. Extract an interface — `AIClientInterface` — with all the methods needed,
+2. Extract an interface, `AIClientInterface`, with all the methods needed,
    as they were needed, by `ClaudeClient`.
 3. Add a second vendor. The interface does not fit, because it was never
    vendor-shaped; it was Claude-shaped with an interface keyword in front of
@@ -79,8 +79,8 @@ The sequence:
    two of the three fixes will be forgotten.
 
 **The remedy was worse than the disease.**
-The correct seam was eventually designed — one context, one renderer per
-vendor, one parser per vendor — and delivered as a big-bang rewrite. A year
+The correct seam was eventually designed (one context, one renderer per
+vendor, one parser per vendor) and delivered as a big-bang rewrite. A year
 later the migration is still not finished. The product works. It is also
 semi-broken in ways I have not finished cataloging, and some bugs have
 not yet been reported to anyone, including me.
@@ -148,15 +148,15 @@ motivate a design. It is a live one, and nobody involved chose it.
 
 With a seam, that is an afternoon: write a renderer for the new surface, keep
 the old one until it dies, switch on a field, and let the logs replay
-unchanged. Without one — with a data structure shaped like a particular
-vendor's request body, which is §2.0's mistake — it is a rewrite, and §2.0 has
+unchanged. Without one (with a data structure shaped like a particular
+vendor's request body, which is §2.0's mistake) it is a rewrite, and §2.0 has
 already told you how those go.
 
-This is also why `Provenance` records a **surface** and not merely a vendor
-(§2.4a). The vendor is not the unit of compatibility. One company, one model,
-two incompatible surfaces is an ordinary Tuesday, and replayed material is
-bound to the surface that produced it. `SurfaceInteractions` is in the enum
-because this was foreseeable, not because it was foreseen.
+This is also why `Provenance` records a **surface** (§2.4a). The vendor is not
+the unit of compatibility. One company, one model, two incompatible surfaces
+is an ordinary Tuesday, and replayed material is bound to the surface that
+produced it. `SurfaceInteractions` is in the enum because this was
+foreseeable.
 
 > *Authorial note: keep this receipt-shaped and dated, per `voice.md`. The
 > verifiable facts, a deprecated surface and a replacement absent from Vertex
@@ -180,7 +180,7 @@ auditor read the log.
 
 **Full re-send is the price of ownership.** Every request carries the entire
 conversation. You pay for it in tokens (largely refunded by prefix caching, a
-later chapter) and you buy the ability to edit history — which is the core
+later chapter) and you buy the ability to edit history, which is the core
 capability of a coding agent and the reason §2.6 declines vendor stateful
 conversation APIs.
 
@@ -208,7 +208,7 @@ conversation APIs.
   metadata and may be wrong, duplicated, or non-monotonic across machines.
 - Never edited, never reordered, never deleted in place. A redaction is a new
   event that supersedes, not a mutation of an old one (§2.6).
-- Serialized as JSON-lines so it is greppable with ordinary tools — a property
+- Serialized as JSON-lines so it is greppable with ordinary tools, a property
   that becomes load-bearing in Chapter 3, when tool output starts arriving by
   the megabyte.
 
@@ -218,7 +218,7 @@ conversation APIs.
 
 ### The self-contained event rule (load-bearing)
 
-Given the current context and just the next event — nothing else — we can
+Given the current context and just the next event (nothing else) we can
 correctly compute the new context. Write the rule as:
 
 ```
@@ -229,7 +229,7 @@ That notation describes **information flow**. It is the chapter's central
 claim: everything needed to advance the context is in the context plus one
 event. It is *not* a demand for value semantics. In Go the natural
 implementation is a pointer receiver mutating in place, and that is the one to
-write — a `Context` full of slices copied by value gives you two contexts
+write: a `Context` full of slices copied by value gives you two contexts
 sharing one backing array, and that bug is indistinguishable from renderer
 non-determinism (§2.7).
 
@@ -244,7 +244,7 @@ the *same* event is a prompt or a hint depending solely on turn state.)
 `MessageReceived`, `RequestSent`, `ResponseStarted`, `ResponseEnded`,
 `ToolCalled`, `ToolReturned`, `Redacted`, `ErrorOccurred`.
 
-Chapter 4 adds `Interrupted`. Chapter 3 adds job events. **Additive, always** —
+Chapter 4 adds `Interrupted`. Chapter 3 adds job events. **Additive, always**:
 this is the first place the write-once discipline is visible to the reader.
 
 Three notes:
@@ -253,19 +253,19 @@ Three notes:
   semantic errors (a tool that ran and failed) are ordinary tool *content*.
   Conflating them is why agents get stuck retrying a compile error as though it
   were a network outage.
-- **Thinking text is log-only.** The context carries opaque replay material —
-  a signature, a redacted block, an id — tagged with the exact model that
+- **Thinking text is log-only.** The context carries opaque replay material
+  (a signature, a redacted block, an id) tagged with the exact model that
   produced it, and the renderer decides whether that model wants it back. Never
   reconstruct reasoning as prose and feed it to a different model as though it
   were your own.
 - **`ResponseEnded` carries the content; `ToolCalled` records the dispatch.**
   Say this explicitly, because two coherent readings exist and they are not
-  compatible. `ResponseEnded.Parts` holds everything the assistant produced —
+  compatible. `ResponseEnded.Parts` holds everything the assistant produced:
   text and `ToolCallPart`s together, in the order it produced them. `ToolCalled`
   is an **engine** event: it contributes no dialogue content and records that a
   call was actually dispatched, so that Chapter 3 can time one and Chapter 4 can
-  cancel one. The alternative — a `ToolCalled` per call, with `ResponseEnded`
-  carrying only text — throws away the ordering of text relative to calls within
+  cancel one. The alternative (a `ToolCalled` per call, with `ResponseEnded`
+  carrying only text) throws away the ordering of text relative to calls within
   a single turn, which is why it is not what we do. This is also how to read
   `InFlight × ResponseEnded (tool calls)` in the table below: *inspect the
   response's parts.* Chapter 3 inherits this choice under write-once, so it
@@ -283,7 +283,7 @@ the shape determines whether the capability can be added without a rewrite.
 ### Turn states
 
 `Idle`, `InputPending`, `InFlight`, `ToolsPending`. (`Interrupted` arrives in
-Chapter 4 — and it must be a *state*, not a flag, or replay re-executes tool
+Chapter 4; and it must be a *state*, not a flag, or replay re-executes tool
 calls that were canceled.)
 
 | transition | result | note |
@@ -310,7 +310,7 @@ only one that can prove it.
 Contents: the dialogue (ordered, actor-attributed, parts-structured), pending
 ephemera, token accounting, and opaque per-model replay
 material carried but never interpreted. Redacted content is not tracked
-separately — it is replaced in place by the reducer (§2.4a).
+separately; it is replaced in place by the reducer (§2.4a).
 
 **Content is Parts, not a string.** Text, tool calls, tool results, images,
 audio, and vendor-opaque blobs. A string is the Chapter 1 mistake wearing a
@@ -476,7 +476,7 @@ The naive version of this field is `Vendor string`. That is wrong, and it is
 wrong in a way you will not discover until a user switches models mid
 conversation.
 
-**Thinking signatures — the encrypted reasoning material — are bound to the
+**Thinking signatures, the encrypted reasoning material, are bound to the
 model, not the vendor.** But *what* each vendor validates, and how it fails, is
 not the same thing — and that difference is worth more than the simpler table
 it replaces.
@@ -487,7 +487,7 @@ across all sixteen pairings were **accepted without error, 16 of 16**. So
 is a signature that is **corrupt**, or one **missing** from a replayed
 `functionCall` (Gemini 3.x; 2.5 returns 200). Anthropic's drop is real but
 **directional**: it reads its own thinking and that of *earlier* models, and
-silently discards a *newer* model's — while returning 400 for one that has been
+silently discards a *newer* model's, while returning 400 for one that has been
 modified.
 
 | vendor | what it validates | how it fails |
@@ -507,7 +507,7 @@ signature is not observable from outside the API, so the claim in print is
 "accepted without error" — never "honored".)*
 
 And `Surface` earns its place for the same reason. Signature validity is scoped
-to *(vendor, model, surface)* — not to vendor:
+to *(vendor, model, surface)*:
 
 - Gemini **Interactions** attaches signatures to thought steps and built-in
   tool steps, but never to standard function calls.
@@ -524,7 +524,7 @@ Hence the rule, which is about capture rather than rendering:
 > content, and is never inferred afterwards. A renderer may read it. Nothing
 > may reconstruct it.
 
-Inference is impossible in principle here — by the time you are rendering, the
+Inference is impossible in principle here: by the time you are rendering, the
 model that produced a signature three turns ago is simply not derivable from
 anything else in the context. Miss it at capture and the information is gone.
 
@@ -536,7 +536,7 @@ inconsistent until you have the rule:
 > **Enum when the code must exhaustively handle every case. String when the
 > value is only compared for equality and the set is open.**
 
-`Vendor` and `Surface` are closed sets the renderer *switches on* — there is
+`Vendor` and `Surface` are closed sets the renderer *switches on*: there is
 exactly one renderer and parser per vendor, compiled in. A typo like
 `"Messages"` in a string field is a runtime surprise; as an enum it does not
 compile. `Model` is the opposite: an open set that gains members weekly, never
@@ -548,7 +548,7 @@ Two details that are easy to get wrong:
 
 **Start the constants at `iota + 1`.** The zero value must be invalid.
 Otherwise a `Provenance` that nobody populated is indistinguishable from a
-genuine Anthropic/messages one — and since provenance must be captured at write
+genuine Anthropic/messages one. And since provenance must be captured at write
 time and can never be reconstructed, "nobody populated it" is precisely the bug
 you need to be loud. A zero value that silently means something is a default
 wearing a disguise.
@@ -563,7 +563,7 @@ coerce is a value you will debug in production.
 ### The tool-call id, and where it collides with replay
 
 The same field carries a second load. A tool-call id is the one piece of vendor
-vocabulary that legitimately enters the context — you cannot answer a call
+vocabulary that legitimately enters the context: you cannot answer a call
 without quoting the id that made it.
 
 Render a conversation holding an Anthropic `toolu_…` id to OpenAI and it is
@@ -603,7 +603,7 @@ type Entry struct {
 **`Entry.Seq` is not decoration.** `RedactData` names a *span* of `Seq` numbers,
 so an entry carrying no `Seq` gives a redaction nothing to match against and the
 entire family becomes inapplicable. The reflex fix, when you hit this while
-building, is a `map[Seq]bool` kept off to the side — which is precisely the
+building, is a `map[Seq]bool` kept off to the side, which is precisely the
 unbounded field the next rule exists to delete. One fixed-size field per entry
 costs nothing, and entries are already bounded by the compaction policy. Watch
 for that pattern: the rule you are about to read will try to reassert itself in
@@ -613,7 +613,7 @@ disguise, and it will look like a reasonable local fix every time.
 it is cheap to honor now and very expensive to retrofit.
 
 The context is not a request buffer. It is the current state of an actor that
-may run for **years** — memory, identity, recent conversation, everything the
+may run for **years**: memory, identity, recent conversation, everything the
 model knows about itself. Anything in it that only ever accumulates is a slow
 leak with a long fuse, and the fuse burns in production, on the agent you care
 most about, long after the design decision is unrecoverable.
@@ -633,15 +633,15 @@ content — **it is content**, and the context holds the result of replaying the
 log, exactly as §2.1 promised.
 
 Apply the same lens to every field and one survivor stands out: `Dialogue`
-grows too. It is bounded by a *policy* — compaction and retention, a later
-chapter — rather than by its shape, and the shape survives compaction unchanged
+grows too. It is bounded by a *policy* (compaction and retention, a later
+chapter) rather than by its shape, and the shape survives compaction unchanged
 because compaction replaces entries with a summary entry. That is the
 distinction to hold: `Dialogue` grows and has a plan; the map grew and had
 none.
 
 ### Redaction is a family, not a flag
 
-The shape above — a **span**, a **level**, and an optional replacement — looks
+The shape above (a **span**, a **level**, and an optional replacement) looks
 like over-modeling for a chapter that only ever stubs a tool result. It is
 here because the alternative is demolishing it later, and because the thing it
 grows into is the mechanism that keeps an agent alive past its context window.
@@ -678,8 +678,8 @@ reasoning but **never** the goal stack; and only when compacted records have
 themselves piled up, summarize.
 
 **Stubs are synthesized, not stored.** A `RedactResult` stub is computed by the
-reducer from the event it supersedes — the tool's name, the size, the path the
-output still lives at — which makes it deterministic (so replay is stable),
+reducer from the event it supersedes (the tool's name, the size, the path the
+output still lives at), which makes it deterministic (so replay is stable),
 recoverable (§2.2's greppable log, and Chapter 3's on-disk tool output), and
 free of storage that grows. Only `RedactSummary` stores a `Replacement`,
 because only there is the new content something an LLM wrote and nobody can
@@ -692,8 +692,8 @@ and the context stays bounded. A framework that compacts by mutating its
 in-memory history has quietly given up on replay, and will not notice until it
 needs to debug a session it can no longer reconstruct.
 
-The policy — what thresholds trigger which level, and where the boundaries fall
-— is context engineering, and it gets its own chapter. Chapter 2 owes it only a
+The policy (what thresholds trigger which level, and where the boundaries fall)
+is context engineering, and it gets its own chapter. Chapter 2 owes it only a
 shape it will not have to break.
 
 ### Usage is four numbers, not two — and they are not disjoint the same way
@@ -721,8 +721,8 @@ agent engineering, and it is invisible without this struct.
 **The trap: vendors disagree about whether their own categories overlap.**
 
 Some report cached tokens as a **subset** of the prompt total. Others report
-them as **disjoint** additions alongside it. Normalize naively — sum everything
-you are given — and you double-count on one vendor and undercount on another,
+them as **disjoint** additions alongside it. Normalize naively (sum everything
+you are given) and you double-count on one vendor and undercount on another,
 producing a cost figure that is confidently wrong in opposite directions
 depending on which model you are talking to.
 
@@ -746,7 +746,7 @@ the log. Same distinction as `Provenance` versus format vocabulary: record what
 happened, compute what it means.
 
 **A known gap, flagged rather than solved.** At least one vendor bills cache
-*storage* by duration — a real cost with no token count attached. A struct of
+*storage* by duration, a real cost with no token count attached. A struct of
 pure counts cannot express it, and cache lifetime is a concept Chapter 2 does
 not have. Noted here so that the later caching chapter adds it deliberately,
 rather than discovering that `Usage` was the wrong shape all along.
@@ -761,7 +761,7 @@ Equally absent: `role`, `content`, `tool_use_id`, `assistant`.
 **But note the distinction `Provenance` forces, because it looks like a
 violation and is not.** Storing `"anthropic"` or `"claude-opus-5"` is recording
 a *fact about where bytes came from*. Storing `role` or `tool_use_id` would be
-adopting a vendor's *description of what the bytes are*. The first is history —
+adopting a vendor's *description of what the bytes are*. The first is history:
 it happened, it is not re-derivable, and throwing it away is lossy. The second
 is a format decision, and format decisions belong in the renderer.
 
@@ -786,7 +786,7 @@ type Parser interface {
 remedy, and its smallness is the point.
 
 `Parse` returns **events**, not a message or a context. There is exactly one
-path into the context — append events, run the reducer — so a vendor response
+path into the context (append events, run the reducer) so a vendor response
 and a human keystroke enter by the same door. Give the parser the power to
 mutate context directly and you have quietly created a second reducer that
 nobody will remember to keep total.
@@ -832,7 +832,7 @@ answer to "am I over-engineering?" — no, and here is the receipt.
 ## §2.5 Actors and rooms
 
 Actors: `Human`, `Agent`, `System`, `Tool`. Rooms group a conversation. There
-is deliberately **no `To` field** — addressing is a property of the room, not
+is deliberately **no `To` field**: addressing is a property of the room, not
 of the message, and adding `To` invites a routing layer the book does not want.
 
 The `Tool` actor looks like over-modeling until §2.6.
@@ -855,7 +855,7 @@ streaming, in token accounting.
 The demonstration the chapter is built around. A single `ToolReturned` event,
 `Actor: Tool`, rendered three ways.
 
-**Anthropic** — a `tool_result` block inside a **user** message:
+**Anthropic**, a `tool_result` block inside a **user** message:
 
 ```json
 { "role": "user",
@@ -863,28 +863,28 @@ The demonstration the chapter is built around. A single `ToolReturned` event,
                  "content": "ok" } ] }
 ```
 
-**OpenAI** — its own message with a **tool** role:
+**OpenAI**, its own message with a **tool** role:
 
 ```json
 { "role": "tool", "tool_call_id": "call_…", "content": "ok" }
 ```
 
-**Gemini** — a `functionResponse` part in a **user** turn:
+**Gemini**, a `functionResponse` part in a **user** turn:
 
 ```json
 { "role": "user",
   "parts": [ { "functionResponse": { "name": "…", "response": { … } } } ] }
 ```
 
-Three vendors cannot agree on who said it. Anthropic says the human did — which
+Three vendors cannot agree on who said it. Anthropic says the human did, which
 is false, and is the tidiest available lie under a format that demands strict
 user/assistant alternation. OpenAI invents a role. Gemini splits the
 difference.
 
 **The context is right and all three wire formats are compromises, in different
-directions.** That is the entire argument for the seam, and it is not an
-analogy — the student will watch one `Actor: Tool` event become three different
-claims about authorship, and none of the three is worth storing.
+directions.** That is the entire argument for the seam: the student will watch
+one `Actor: Tool` event become three different claims about authorship, and
+none of the three is worth storing.
 
 Corollary, and the reason §2.5 models a `Tool` actor at all: **authorship is a
 rendering decision.** If your context stores `role: "user"` for a tool result
@@ -933,7 +933,7 @@ has leaked vendor shape past the parser — and leaked vendor shape is precisely
 what makes the second implementation a copy-paste.
 
 Also normalized here: token accounting (`usage.input_tokens` /
-`prompt_tokens` / `usageMetadata.promptTokenCount`), and errors — an HTTP 429
+`prompt_tokens` / `usageMetadata.promptTokenCount`), and errors: an HTTP 429
 is an `ErrorOccurred`, not a response.
 
 ### Rules the seam has to hold
@@ -947,8 +947,8 @@ is an `ErrorOccurred`, not a response.
   violation into silently-wrong output.
 - **Opaque replay material is carried, never interpreted.** Thinking
   signatures, tool-use ids, cache markers: store them, hand them back to the
-  **exact model** that issued them, and never to a different one. Vendor is not
-  a fine enough grain — see `Provenance` in §2.4a.
+  **exact model** that issued them, and never to a different one. Match the
+  grain to the model (see `Provenance` in §2.4a).
 - **The context never learns a vendor's vocabulary.** If the word `assistant`,
   `toolu_`, or `functionCall` appears in your context types, the seam has
   already leaked.
@@ -963,11 +963,11 @@ This is the chapter's falsifiable claim about its own design, and it is the
 only place in the book where the reader can run the experiment themselves. So
 the **order is fixed, and it is fixed to make the test honest**:
 
-1. **Anthropic** — the baseline. Everything the student already has.
-2. **OpenAI** — a moderate difference: a `tool` role of its own, a flat message
+1. **Anthropic**: the baseline. Everything the student already has.
+2. **OpenAI**, a moderate difference: a `tool` role of its own, a flat message
    list, `tool_calls` as an array. Enough divergence to force a real
    abstraction rather than a rename.
-3. **Gemini** — the genuinely alien one. `contents` rather than `messages`,
+3. **Gemini**: the genuinely alien one. `contents` rather than `messages`,
    `parts` rather than blocks, `role: "model"`, `systemInstruction` hoisted
    clean out of the message list, `functionCall`/`functionResponse`.
 
@@ -1013,7 +1013,7 @@ surface before shipping the replacement to its own enterprise platform.
 **And there is no event to subscribe to.** The old surface was deprecated
 without shipping any way to learn when the new one reaches Vertex AI. So the
 migration path is a polling loop with a human in it. I checked a week ago. What
-is the correct interval for polling a vendor's roadmap — weekly? monthly? — is
+is the correct interval for polling a vendor's roadmap (weekly? monthly?) is
 left as an exercise to the reader, and it is the only exercise in this book with
 no defensible answer.
 
@@ -1025,10 +1025,10 @@ whether your abstraction was real.
 
 **This is the second reason the order is fixed, and the more useful one.**
 Building against the most honest API first is not a difficulty ramp, it is
-establishing a control. When a vendor's failure is ambiguous — and one of them
-always is — you need to already know, not hope, that your context assembly is
-correct, or you cannot tell their bug from yours and will spend the afternoon
-apologizing to a machine that was wrong. Order your implementations so the
+establishing a control. When a vendor's failure is ambiguous (and one of them
+always is) you need to already know that your context assembly is correct, or
+you cannot tell their bug from yours and will spend the afternoon apologizing
+to a machine that was wrong. Order your implementations so the
 ambiguous failures arrive *after* you have something trustworthy to bisect
 against. That habit outlives every vendor named in this chapter.
 
@@ -1062,7 +1062,7 @@ specific things.
   semantic version.
 - **Where the version lives, and the asymmetry that governs it.** A version is
   not an event, so it does not get a `Seq`: emit it as a header line,
-  `{"log_version":1}`, ahead of the events. Then be **lenient about it** — a log
+  `{"log_version":1}`, ahead of the events. Then be **lenient about it**: a log
   with no header is assumed current, and the grader ignores the line entirely,
   so omitting it costs nothing. Reserve strictness for what you must
   *interpret*. That split is the rule worth carrying: **be forgiving about
@@ -1097,7 +1097,7 @@ never on the one where you tested.
 `render` is the centerpiece: it makes replay, redaction, ephemera and the seam
 into **byte comparisons**, and it proves context is separable from transport.
 If your architecture cannot offer it cheaply, your context is not actually
-separate from your transport — which is the finding the exercise exists to
+separate from your transport, which is the finding the exercise exists to
 surface.
 
 `render` takes **no flags**. Vendor target, model id and every other request
@@ -1107,7 +1107,7 @@ moment rendering accepts `--model`, byte-identity becomes a property of how you
 invoked the command rather than of the log.
 
 **Build them in this order: Anthropic, then OpenAI, then Gemini.** The reason is
-in §2.6 — the order is what makes the chapter's prediction a real test rather
+in §2.6: the order is what makes the chapter's prediction a real test rather
 than a flattering one. Note how long each takes you. That number is the
 chapter's actual lesson, and it is yours rather than ours.
 
@@ -1150,7 +1150,7 @@ finish Chapter 2.
 
 Notes on the weighting:
 
-- **The parse side still outweighs the render side, 25 to 15** — it is just
+- **The parse side still outweighs the render side, 25 to 15**: it is just
   itemized now. `usage` is parsing work: normalizing four token categories
   across three vendors that disagree about whether their own categories
   overlap. Pulling it out of `seam-parse` and naming it separately means a
